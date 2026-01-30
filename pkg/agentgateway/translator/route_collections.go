@@ -149,14 +149,14 @@ func ProcessParentReferences[T any](
 	// Build the "allowed" set from FilteredReferences (listener-scoped).
 	allowed := make(map[string]struct{})
 	for _, p := range FilteredReferences(parentRefs) {
-		k := fmt.Sprintf("%s/%s/%s/%s", p.ParentKey.Namespace, p.ParentKey.Name, p.ParentKey.Kind, string(p.ParentSection))
+		k := fmt.Sprintf("%s/%s/%s/%s", p.ParentKey.Namespace, p.ParentKey.Name, p.ParentKey.GVK, string(p.ParentSection))
 		allowed[k] = struct{}{}
 	}
 
 	// Aggregate per Gateway for status; also track whether any raw parent was cross-namespace.
 	type gwAgg struct {
 		anyAllowed bool
-		rep        RouteParentReference
+		parentRefs []RouteParentReference
 	}
 	agg := make(map[types.NamespacedName]*gwAgg)
 	crossNS := sets.New[types.NamespacedName]()
@@ -165,7 +165,9 @@ func ProcessParentReferences[T any](
 	for _, p := range parentRefs {
 		gwNN := p.ParentGateway
 		if _, ok := agg[gwNN]; !ok {
-			agg[gwNN] = &gwAgg{anyAllowed: false, rep: p}
+			agg[gwNN] = &gwAgg{anyAllowed: false, parentRefs: []RouteParentReference{p}}
+		} else {
+			agg[gwNN].parentRefs = append(agg[gwNN].parentRefs, p)
 		}
 		if p.ParentKey.Namespace != routeNN.Namespace {
 			crossNS.Insert(gwNN)
@@ -182,7 +184,7 @@ func ProcessParentReferences[T any](
 	for _, parent := range parentRefs {
 		gwNN := parent.ParentGateway
 		listener := string(parent.ParentSection)
-		keyStr := fmt.Sprintf("%s/%s/%s/%s", parent.ParentKey.Namespace, parent.ParentKey.Name, parent.ParentKey.Kind, listener)
+		keyStr := fmt.Sprintf("%s/%s/%s/%s", parent.ParentKey.Namespace, parent.ParentKey.Name, parent.ParentKey.GVK, listener)
 		_, isAllowed := allowed[keyStr]
 
 		if isAllowed {
@@ -203,72 +205,73 @@ func ProcessParentReferences[T any](
 		}
 	}
 
-	// Emit exactly ONE ParentStatus per Gateway (aggregate across listeners; no SectionName).
 	for gwNN, a := range agg {
-		parent := a.rep
-		prStatusRef := parent.OriginalReference
-		{
-			stringPtr := func(s string) *string { return &s }
-			prStatusRef.Group = (*gwv1.Group)(stringPtr(wellknown.GatewayGVK.Group))
-			prStatusRef.Kind = (*gwv1.Kind)(stringPtr(wellknown.GatewayGVK.Kind))
-			prStatusRef.Namespace = (*gwv1.Namespace)(stringPtr(parent.ParentKey.Namespace))
-			prStatusRef.Name = gwv1.ObjectName(parent.ParentKey.Name)
-			prStatusRef.SectionName = nil
-		}
-		pr := routeReporter.ParentRef(&prStatusRef)
-		resolvedReason := reasonResolvedRefs(gwResult.Error, resolvedOK)
-
-		if a.anyAllowed {
-			pr.SetCondition(reporter.RouteCondition{
-				Type:   gwv1.RouteConditionAccepted,
-				Status: metav1.ConditionTrue,
-				Reason: gwv1.RouteReasonAccepted,
-			})
-		} else {
-			// Nothing attached: choose reason based on *why* it wasn't allowed.
-			// Priority:
-			// 1) Denied
-			// 2) Cross-namespace and listeners don’t allow it -> NotAllowedByListeners
-			// 3) sectionName specified but no such listener on the parent -> NoMatchingParent
-			// 4) Otherwise, no hostname intersection -> NoMatchingListenerHostname
-			reason := gwv1.RouteConditionReason("NoMatchingListenerHostname")
-			msg := "No route hostnames intersect any listener hostname"
-			if dr := denied[gwNN]; dr != nil {
-				reason = gwv1.RouteConditionReason(dr.Reason)
-				msg = dr.Message
+		for _, parent := range a.parentRefs {
+			prStatusRef := parent.OriginalReference
+			{
+				stringPtr := func(s string) *string { return &s }
+				prStatusRef.Group = (*gwv1.Group)(stringPtr(parent.ParentKey.GVK.Group))
+				prStatusRef.Kind = (*gwv1.Kind)(stringPtr(parent.ParentKey.GVK.Kind))
+				prStatusRef.Namespace = (*gwv1.Namespace)(stringPtr(parent.ParentKey.Namespace))
+				prStatusRef.Name = gwv1.ObjectName(parent.ParentKey.Name)
+				prStatusRef.SectionName = nil
 			}
-			if crossNS.Contains(gwNN) {
-				reason = gwv1.RouteReasonNotAllowedByListeners
-				msg = "Parent listener not usable or not permitted"
-			} else if a.rep.OriginalReference.SectionName != nil || a.rep.OriginalReference.Port != nil {
-				// Use string literal to avoid compile issues if the constant name differs.
-				reason = gwv1.RouteConditionReason("NoMatchingParent")
-				msg = "No listener with the specified sectionName on the parent Gateway"
+			// The report created does not consider the section name - so only one ParentStatus is created per resource
+			pr := routeReporter.ParentRef(&prStatusRef)
+			resolvedReason := reasonResolvedRefs(gwResult.Error, resolvedOK)
+
+			if a.anyAllowed {
+				pr.SetCondition(reporter.RouteCondition{
+					Type:   gwv1.RouteConditionAccepted,
+					Status: metav1.ConditionTrue,
+					Reason: gwv1.RouteReasonAccepted,
+				})
+			} else {
+				// Nothing attached: choose reason based on *why* it wasn't allowed.
+				// Priority:
+				// 1) Denied
+				// 2) Cross-namespace and listeners don’t allow it -> NotAllowedByListeners
+				// 3) sectionName specified but no such listener on the parent -> NoMatchingParent
+				// 4) Otherwise, no hostname intersection -> NoMatchingListenerHostname
+				reason := gwv1.RouteConditionReason("NoMatchingListenerHostname")
+				msg := "No route hostnames intersect any listener hostname"
+				if dr := denied[gwNN]; dr != nil {
+					reason = gwv1.RouteConditionReason(dr.Reason)
+					msg = dr.Message
+				}
+				if crossNS.Contains(gwNN) {
+					reason = gwv1.RouteReasonNotAllowedByListeners
+					msg = "Parent listener not usable or not permitted"
+				} else if parent.OriginalReference.SectionName != nil || parent.OriginalReference.Port != nil {
+					// Use string literal to avoid compile issues if the constant name differs.
+					reason = gwv1.RouteConditionReason("NoMatchingParent")
+					msg = "No listener with the specified sectionName on the parent Gateway"
+				}
+				pr.SetCondition(reporter.RouteCondition{
+					Type:    gwv1.RouteConditionAccepted,
+					Status:  metav1.ConditionFalse,
+					Reason:  reason,
+					Message: msg,
+				})
 			}
+
 			pr.SetCondition(reporter.RouteCondition{
-				Type:    gwv1.RouteConditionAccepted,
-				Status:  metav1.ConditionFalse,
-				Reason:  reason,
-				Message: msg,
+				Type: gwv1.RouteConditionResolvedRefs,
+				Status: func() metav1.ConditionStatus {
+					if resolvedOK {
+						return metav1.ConditionTrue
+					}
+					return metav1.ConditionFalse
+				}(),
+				Reason: resolvedReason,
+				Message: func() string {
+					if gwResult.Error != nil {
+						return gwResult.Error.Message
+					}
+					return ""
+				}(),
 			})
 		}
-
-		pr.SetCondition(reporter.RouteCondition{
-			Type: gwv1.RouteConditionResolvedRefs,
-			Status: func() metav1.ConditionStatus {
-				if resolvedOK {
-					return metav1.ConditionTrue
-				}
-				return metav1.ConditionFalse
-			}(),
-			Reason: resolvedReason,
-			Message: func() string {
-				if gwResult.Error != nil {
-					return gwResult.Error.Message
-				}
-				return ""
-			}(),
-		})
 	}
 	return resources
 }
@@ -300,7 +303,7 @@ func buildAttachedRoutesMapAllowed(
 	seen := make(map[attachKey]struct{})
 
 	for _, parent := range allowedParents {
-		if parent.ParentKey.Kind != wellknown.GatewayGVK {
+		if parent.ParentKey.GVK != wellknown.GatewayGVK {
 			continue
 		}
 		gw := types.NamespacedName{Namespace: parent.ParentKey.Namespace, Name: parent.ParentKey.Name}
@@ -439,7 +442,7 @@ func createTCPRouteCollection[T controllers.Object, ST any](
 func ListenersPerGateway(parentRefs []RouteParentReference) map[types.NamespacedName]map[string]struct{} {
 	l := make(map[types.NamespacedName]map[string]struct{})
 	for _, p := range parentRefs {
-		if p.ParentKey.Kind != wellknown.GatewayGVK {
+		if p.ParentKey.GVK != wellknown.GatewayGVK {
 			continue
 		}
 		gw := types.NamespacedName{Namespace: p.ParentKey.Namespace, Name: p.ParentKey.Name}
@@ -572,12 +575,10 @@ func gatewayRouteAttachmentCountCollection[T controllers.Object](
 
 		parentRefs := extractParentReferenceInfo(ctx, inputs.RouteParents, obj)
 		return slices.MapFilter(FilteredReferences(parentRefs), func(e RouteParentReference) **RouteAttachment {
-			if e.ParentKey.Kind != wellknown.GatewayGVK {
-				return nil
-			}
 			return ptr.Of(&RouteAttachment{
 				From: from,
-				To: types.NamespacedName{
+				To: ParentKey{
+					GVK:       e.ParentKey.GVK,
 					Name:      e.ParentKey.Name,
 					Namespace: e.ParentKey.Namespace,
 				},
@@ -588,9 +589,8 @@ func gatewayRouteAttachmentCountCollection[T controllers.Object](
 }
 
 type RouteAttachment struct {
-	From TypedResource
-	// To is assumed to be a Gateway
-	To           types.NamespacedName
+	From         TypedResource
+	To           ParentKey
 	ListenerName string
 }
 

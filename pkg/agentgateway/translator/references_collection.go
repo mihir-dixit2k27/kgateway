@@ -47,6 +47,8 @@ func ReferenceGrantsCollection(referenceGrants krt.Collection[*gwv1b1.ReferenceG
 			}
 			if string(from.Group) == wellknown.GatewayGVK.Group && string(from.Kind) == wellknown.GatewayKind {
 				fromKey.Kind = wellknown.GatewayGVK
+			} else if string(from.Group) == wellknown.XListenerSetGVK.Group && string(from.Kind) == wellknown.XListenerSetKind {
+				fromKey.Kind = wellknown.XListenerSetGVK
 			} else if string(from.Group) == wellknown.HTTPRouteGVK.Group && string(from.Kind) == wellknown.HTTPRouteKind {
 				fromKey.Kind = wellknown.HTTPRouteGVK
 			} else if string(from.Group) == wellknown.GRPCRouteGVK.Group && string(from.Kind) == wellknown.GRPCRouteKind {

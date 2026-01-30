@@ -2,6 +2,9 @@ module github.com/kgateway-dev/kgateway/v2
 
 go 1.25.6
 
+replace sigs.k8s.io/gateway-api => ../gateway-api
+replace sigs.k8s.io/gateway-api/conformance => ../gateway-api/conformance
+
 require (
 	// Also update AgentgatewayDefaultTag in pkg/deployer/wellknown.go and test/deployer/testdata/*
 	github.com/agentgateway/agentgateway v0.11.1
@@ -447,10 +450,6 @@ require (
 	sigs.k8s.io/mcs-api v0.2.0 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 )
-
-replace sigs.k8s.io/gateway-api => ../gateway-api
-
-replace sigs.k8s.io/gateway-api/conformance => ../gateway-api/conformance
 
 tool (
 	github.com/golang/mock/mockgen

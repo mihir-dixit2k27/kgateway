@@ -60,6 +60,10 @@ type ParentRefKey struct {
 	types.NamespacedName
 }
 
+func (p *ParentRefKey) String() string {
+	return fmt.Sprintf("%s/%s/%s", p.Group, p.Kind, p.NamespacedName.String())
+}
+
 func NewReportMap() ReportMap {
 	return ReportMap{
 		Gateways:     make(map[types.NamespacedName]*GatewayReport),

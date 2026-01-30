@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync/atomic"
 
 	"github.com/agentgateway/agentgateway/go/api"
@@ -11,7 +12,6 @@ import (
 	"istio.io/istio/pilot/pkg/model"
 	"istio.io/istio/pilot/pkg/serviceregistry/kube/controller/ambient"
 	"istio.io/istio/pkg/cluster"
-	"istio.io/istio/pkg/config"
 	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/kube/krt"
 	"istio.io/istio/pkg/network"
@@ -38,6 +38,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/pkg/kgateway/agentgatewaysyncer/krtxds"
 	"github.com/kgateway-dev/kgateway/v2/pkg/kgateway/agentgatewaysyncer/nack"
 	"github.com/kgateway-dev/kgateway/v2/pkg/kgateway/agentgatewaysyncer/status"
+	"github.com/kgateway-dev/kgateway/v2/pkg/kgateway/wellknown"
 	"github.com/kgateway-dev/kgateway/v2/pkg/logging"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/krtutil"
 	krtpkg "github.com/kgateway-dev/kgateway/v2/pkg/utils/krtutil"
@@ -145,7 +146,6 @@ func (s *Syncer) buildResourceCollections(krtopts krtutil.KrtOptions) {
 	gatewayClasses := translator.GatewayClassesCollection(s.agwCollections.GatewayClasses, krtopts)
 	refGrants := translator.BuildReferenceGrants(translator.ReferenceGrantsCollection(s.agwCollections.ReferenceGrants, krtopts))
 	listenerSetStatus, listenerSets := s.buildListenerSetCollection(gatewayClasses, refGrants, krtopts)
-	status.RegisterStatus(s.statusCollections, listenerSetStatus, translator.GetStatus)
 	if s.customResourceCollections != nil {
 		s.customResourceCollections(CustomResourceCollectionsConfig{
 			ControllerName:    s.controllerName,
@@ -173,6 +173,9 @@ func (s *Syncer) buildResourceCollections(krtopts krtutil.KrtOptions) {
 	gatewayFinalStatus := s.buildFinalGatewayStatus(gatewayInitialStatus, routeAttachments, krtopts)
 	status.RegisterStatus(s.statusCollections, gatewayFinalStatus, translator.GetStatus)
 
+	listenerSetFinalStatus := s.buildFinalListenerSetStatus(gateways, listenerSetStatus, routeAttachments, krtopts)
+	status.RegisterStatus(s.statusCollections, listenerSetFinalStatus, translator.GetStatus)
+
 	// Build address collections
 	addresses := s.buildAddressCollections(krtopts)
 
@@ -191,15 +194,19 @@ func (s *Syncer) buildFinalGatewayStatus(
 	routeAttachments krt.Collection[*translator.RouteAttachment],
 	krtopts krtutil.KrtOptions,
 ) krt.StatusCollection[*gwv1.Gateway, gwv1.GatewayStatus] {
-	routeAttachmentsIndex := krt.NewIndex(routeAttachments, "to", func(o *translator.RouteAttachment) []types.NamespacedName {
-		return []types.NamespacedName{o.To}
+	routeAttachmentsIndex := krt.NewIndex(routeAttachments, "to", func(o *translator.RouteAttachment) []translator.ParentKey {
+		return []translator.ParentKey{o.To}
 	})
 	return krt.NewCollection(
 		gatewayStatuses,
 		func(ctx krt.HandlerContext, i krt.ObjectWithStatus[*gwv1.Gateway, gwv1.GatewayStatus]) *krt.ObjectWithStatus[*gwv1.Gateway, gwv1.GatewayStatus] {
-			tcpRoutes := krt.Fetch(ctx, routeAttachments, krt.FilterIndex(routeAttachmentsIndex, config.NamespacedName(i.Obj)))
+			routes := krt.Fetch(ctx, routeAttachments, krt.FilterIndex(routeAttachmentsIndex, translator.ParentKey{
+				GVK:       wellknown.GatewayGVK,
+				Namespace: i.Obj.Namespace,
+				Name:      i.Obj.Name,
+			}))
 			counts := map[string]int32{}
-			for _, r := range tcpRoutes {
+			for _, r := range routes {
 				counts[r.ListenerName]++
 			}
 			status := i.Status.DeepCopy()
@@ -212,6 +219,107 @@ func (s *Syncer) buildFinalGatewayStatus(
 				Status: *status,
 			}
 		}, krtopts.ToOptions("GatewayFinalStatus")...)
+}
+
+type SectionedNamespacedName struct {
+	types.NamespacedName
+	SectionName gwv1.SectionName
+}
+
+func ToSectionedNamespacedName(s string) SectionedNamespacedName {
+	parts := strings.Split(s, "/")
+	if len(parts) != 3 {
+		panic("invalid SectionedNamespacedName: " + s)
+	}
+	return SectionedNamespacedName{
+		NamespacedName: types.NamespacedName{
+			Namespace: parts[0],
+			Name:      parts[1],
+		},
+		SectionName: gwv1.SectionName(parts[2]),
+	}
+}
+
+func (n SectionedNamespacedName) String() string {
+	return fmt.Sprintf("%s/%s", n.NamespacedName.String(), n.SectionName)
+}
+
+func (s *Syncer) buildFinalListenerSetStatus(
+	gateways krt.Collection[*translator.GatewayListener],
+	listenerSetStatus krt.StatusCollection[*gatewayx.XListenerSet, gatewayx.ListenerSetStatus],
+	routeAttachments krt.Collection[*translator.RouteAttachment],
+	krtopts krtutil.KrtOptions,
+) krt.StatusCollection[*gatewayx.XListenerSet, gatewayx.ListenerSetStatus] {
+	routeAttachmentsIndex := krt.NewIndex(routeAttachments, "to", func(o *translator.RouteAttachment) []translator.ParentKey {
+		return []translator.ParentKey{o.To}
+	})
+
+	var toSectionedNamespacedName = krt.WithIndexCollectionFromString(ToSectionedNamespacedName)
+	gatewayIndex := krt.NewIndex(gateways, "gateway-parent-section-name", func(gwl *translator.GatewayListener) []SectionedNamespacedName {
+		return []SectionedNamespacedName{{
+			NamespacedName: types.NamespacedName{
+				Namespace: gwl.ParentObject.Namespace,
+				Name:      gwl.ParentObject.Name,
+			},
+			SectionName: gwl.ParentInfo.SectionName,
+		}}
+	}).AsCollection(append(krtopts.ToOptions("gatewayIndex"), toSectionedNamespacedName)...)
+	return krt.NewCollection(listenerSetStatus,
+		func(ctx krt.HandlerContext, i krt.ObjectWithStatus[*gatewayx.XListenerSet, gatewayx.ListenerSetStatus]) *krt.ObjectWithStatus[*gatewayx.XListenerSet, gatewayx.ListenerSetStatus] {
+			// Skip if listenerset not allowed
+			if len(i.Status.Conditions) == 0 || i.Status.Conditions[0].Reason == string(gatewayx.ListenerSetReasonNotAllowed) {
+				return &i
+			}
+
+			invalidListenerCount := 0
+			lsStatus := i.Status.DeepCopy()
+			routes := krt.Fetch(ctx, routeAttachments, krt.FilterIndex(routeAttachmentsIndex, translator.ParentKey{
+				GVK:       wellknown.XListenerSetGVK,
+				Namespace: i.Obj.Namespace,
+				Name:      i.Obj.Name,
+			}))
+			counts := map[string]int32{}
+			for _, r := range routes {
+				counts[r.ListenerName]++
+			}
+
+			for idx, l := range i.Obj.Spec.Listeners {
+				gatewayListener := krt.FetchOne(ctx, gatewayIndex, krt.FilterKey(SectionedNamespacedName{
+					NamespacedName: types.NamespacedName{
+						Namespace: i.Obj.Namespace,
+						Name:      string(i.Obj.Name),
+					},
+					SectionName: l.Name,
+				}.String()))
+				if len(gatewayListener.Objects) == 0 {
+					continue
+				}
+
+				obj := gatewayListener.Objects[0]
+				switch obj.State {
+				case translator.LISTENER_HOSTNAME_CONFLICT:
+					invalidListenerCount++
+					ListenerMessageHostnameConflict := "Found conflicting hostnames on listeners, all listeners on a single port must have unique hostnames"
+					translator.ReportListenerSetListenerConflicts(&lsStatus.Listeners[idx], i.Obj, string(gwv1.ListenerReasonHostnameConflict), ListenerMessageHostnameConflict)
+				case translator.LISTENER_PROTOCOL_CONFLICT:
+					invalidListenerCount++
+					ListenerMessageProtocolConflict := "Found conflicting protocols on listeners, a single port can only contain listeners with compatible protocols"
+					translator.ReportListenerSetListenerConflicts(&lsStatus.Listeners[idx], i.Obj, string(gwv1.ListenerReasonProtocolConflict), ListenerMessageProtocolConflict)
+				case translator.LISTENER_INVALID:
+					invalidListenerCount++
+				}
+				lsStatus.Listeners[idx].AttachedRoutes = counts[string(l.Name)]
+			}
+
+			if invalidListenerCount > 0 {
+				listenerSetAccepted := invalidListenerCount < len(i.Obj.Spec.Listeners)
+				translator.ReportListenerSetWithConflicts(lsStatus, i.Obj, listenerSetAccepted)
+			}
+			return &krt.ObjectWithStatus[*gatewayx.XListenerSet, gatewayx.ListenerSetStatus]{
+				Obj:    i.Obj,
+				Status: *lsStatus,
+			}
+		})
 }
 
 func (s *Syncer) buildGatewayCollection(
@@ -291,7 +399,7 @@ func (s *Syncer) buildAgwResources(
 				Name:      gw.ParentGateway.Name,
 			})
 			// TODO: better handle conflicts of protocols. For now, we arbitrarily treat TLS > plain
-			if gw.Valid {
+			if gw.State == translator.LISTENER_VALID {
 				protocol = max(protocol, s.getBindProtocol(gw))
 			}
 		}

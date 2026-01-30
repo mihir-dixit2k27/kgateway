@@ -41,6 +41,13 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/kubeutils"
 )
 
+const (
+	LISTENER_VALID = iota
+	LISTENER_HOSTNAME_CONFLICT
+	LISTENER_PROTOCOL_CONFLICT
+	LISTENER_INVALID
+)
+
 // ConvertHTTPRouteToAgw converts a HTTPRouteRule to an agentgateway HTTPRoute
 func ConvertHTTPRouteToAgw(ctx RouteContext, r gwv1.HTTPRouteRule,
 	obj *gwv1.HTTPRoute, pos int, matchPos int,
@@ -807,12 +814,6 @@ var knownReferences = sets.New(
 	wellknown.SecretGVK,
 	wellknown.ConfigMapGVK,
 )
-var allowedParentReferences = sets.New(
-	wellknown.GatewayGVK,
-	wellknown.XListenerSetGVK,
-	wellknown.ServiceGVK,
-	wellknown.ServiceEntryGVK,
-)
 
 // NormalizeReference normalizes group and kind references to a standard GVK format.
 // If group or kind are nil/empty, it uses the default GVK's group/kind.
@@ -845,11 +846,8 @@ func NormalizeReference(group *gwv1.Group, kind *gwv1.Kind, defaultGVK schema.Gr
 // ToInternalParentReference converts a gwv1.ParentReference to a ParentKey.
 func ToInternalParentReference(p gwv1.ParentReference, localNamespace string) (ParentKey, error) {
 	ref := NormalizeReference(p.Group, p.Kind, wellknown.GatewayGVK)
-	if !allowedParentReferences.Contains(wellknown.GatewayGVK) {
-		return ParentKey{}, fmt.Errorf("unsupported Parent: %v/%v", p.Group, p.Kind)
-	}
 	return ParentKey{
-		Kind: ref,
+		GVK:  ref,
 		Name: string(p.Name),
 		// Unset namespace means "same namespace"
 		Namespace: defaultString(p.Namespace, localNamespace),
@@ -867,7 +865,7 @@ func ReferenceAllowed(
 	hostnames []gwv1.Hostname,
 	localNamespace string,
 ) *ParentError {
-	if parentRef.Kind == wellknown.ServiceGVK {
+	if parentRef.GVK == wellknown.ServiceGVK {
 		key := parentRef.Namespace + "/" + parentRef.Name
 		svc := ptr.Flatten(krt.FetchOne(ctx.Krt, ctx.Services, krt.FilterKey(key)))
 
@@ -878,7 +876,7 @@ func ReferenceAllowed(
 				Message: fmt.Sprintf("parent service: %q not found", parentRef.Name),
 			}
 		}
-	} else if parentRef.Kind == wellknown.ServiceEntryGVK {
+	} else if parentRef.GVK == wellknown.ServiceEntryGVK {
 		// check that the referenced svc entry exists
 		key := parentRef.Namespace + "/" + parentRef.Name
 		svcEntry := ptr.Flatten(krt.FetchOne(ctx.Krt, ctx.ServiceEntries, krt.FilterKey(key)))
@@ -915,7 +913,7 @@ func ReferenceAllowed(
 			hostMatched := false
 		out:
 			for _, routeHostname := range hostnames {
-				for _, parentHostNamespace := range parent.Hostnames {
+				for _, parentHostNamespace := range parent.Hostnames.UnsortedList() {
 					var parentNamespace, parentHostname string
 					if strings.Contains(parentHostNamespace, "/") {
 						spl := strings.Split(parentHostNamespace, "/")
@@ -1006,7 +1004,7 @@ func extractParentReferenceInfo(ctx RouteContext, parents RouteParents, obj cont
 			rpi := RouteParentReference{
 				ParentGateway:     pr.ParentGateway,
 				InternalName:      pr.InternalName,
-				InternalKind:      ir.Kind,
+				InternalKind:      ir.GVK,
 				Hostname:          pr.OriginalHostname,
 				DeniedReason:      deniedReason,
 				OriginalReference: ref,
@@ -1038,7 +1036,7 @@ func isInvalidBackend(err *reporter.RouteCondition) bool {
 // ParentKey holds info about a parentRef (eg route binding to a Gateway). This is a mirror of
 // gwv1.ParentReference in a form that can be stored in a map
 type ParentKey struct {
-	Kind schema.GroupVersionKind
+	GVK schema.GroupVersionKind
 	// Name is the original name of the resource (eg Kubernetes Gateway name)
 	Name string
 	// Namespace is the namespace of the resource
@@ -1046,7 +1044,7 @@ type ParentKey struct {
 }
 
 func (p ParentKey) String() string {
-	return p.Kind.String() + "/" + p.Namespace + "/" + p.Name
+	return p.GVK.String() + "/" + p.Namespace + "/" + p.Name
 }
 
 // ParentReference holds the parent key, section name and port for a parent reference.
@@ -1073,9 +1071,11 @@ type ParentInfo struct {
 	AllowedKinds []gwv1.RouteGroupKind
 	// Hostnames is the hostnames that must be match to reference to the Parent. For gateway this is listener hostname
 	// Format is ns/hostname
-	Hostnames []string
+	Hostnames sets.String
 	// OriginalHostname is the unprocessed form of Hostnames; how it appeared in users' config
 	OriginalHostname string
+	// Timestamp the parent was created - used in determining listener precedence
+	CreationTimestamp metav1.Time
 
 	SectionName    gwv1.SectionName
 	Port           gwv1.PortNumber
@@ -1213,7 +1213,7 @@ func BuildListener(
 	l gwv1.Listener,
 	listenerIndex int,
 	portErr error,
-) ([]string, *TLSInfo, []gwv1.ListenerStatus, bool) {
+) (sets.String, *TLSInfo, []gwv1.ListenerStatus, int) {
 	listenerConditions := map[string]*Condition{
 		string(gwv1.ListenerConditionAccepted): {
 			Reason:  string(gwv1.ListenerReasonAccepted),
@@ -1234,7 +1234,7 @@ func BuildListener(
 		},
 	}
 
-	ok := true
+	listenerState := LISTENER_VALID
 	gwTls := resolveGatewayTLS(l.Port, gw.TLS)
 	tlsInfo, err := buildTLS(ctx, secrets, configMaps, grants, gwTls, l.TLS, obj)
 	if err == nil && tlsInfo != nil {
@@ -1247,14 +1247,14 @@ func BuildListener(
 			Reason:  string(gwv1.GatewayReasonInvalid),
 			Message: "Bad TLS configuration",
 		}
-		ok = false
+		listenerState = LISTENER_INVALID
 	}
 	if portErr != nil {
 		listenerConditions[string(gwv1.ListenerConditionAccepted)].Error = &ConfigError{
 			Reason:  string(gwv1.ListenerReasonUnsupportedProtocol),
 			Message: portErr.Error(),
 		}
-		ok = false
+		listenerState = LISTENER_INVALID
 	}
 
 	hostnames := buildHostnameMatch(ctx, obj.GetNamespace(), namespaces, l)
@@ -1265,11 +1265,11 @@ func BuildListener(
 			Reason:  string(gwv1.ListenerReasonUnsupportedProtocol),
 			Message: perr.Error(),
 		}
-		ok = false
+		listenerState = LISTENER_INVALID
 	}
 
 	updatedStatus := reportListenerCondition(listenerIndex, l, obj, status, listenerConditions)
-	return hostnames, tlsInfo, updatedStatus, ok
+	return hostnames, tlsInfo, updatedStatus, listenerState
 }
 
 func resolveGatewayTLS(port gwv1.PortNumber, gw *gwv1.GatewayTLSConfig) *gwv1.TLSConfig {
@@ -1544,18 +1544,18 @@ func ParentRefString(ref gwv1.ParentReference) string {
 }
 
 // buildHostnameMatch generates a Gateway.spec.servers.hosts section from a listener
-func buildHostnameMatch(ctx krt.HandlerContext, localNamespace string, namespaces krt.Collection[*corev1.Namespace], l gwv1.Listener) []string {
+func buildHostnameMatch(ctx krt.HandlerContext, localNamespace string, namespaces krt.Collection[*corev1.Namespace], l gwv1.Listener) sets.String {
 	// We may allow all hostnames or a specific one
 	hostname := "*"
 	if l.Hostname != nil {
 		hostname = string(*l.Hostname)
 	}
 
-	resp := []string{}
+	resp := sets.New[string]()
 	for _, ns := range namespacesFromSelector(ctx, localNamespace, namespaces, l.AllowedRoutes) {
 		// This check is necessary to prevent adding a hostname with an invalid empty namespace
 		if len(ns) > 0 {
-			resp = append(resp, fmt.Sprintf("%s/%s", ns, hostname))
+			resp = resp.Insert(fmt.Sprintf("%s/%s", ns, hostname))
 		}
 	}
 
@@ -1563,7 +1563,7 @@ func buildHostnameMatch(ctx krt.HandlerContext, localNamespace string, namespace
 	// empty hostname list, but we still need the Gateway provisioned to ensure status is properly set and
 	// SNI matches are established; we just don't want to actually match any routing rules (yet).
 	if len(resp) == 0 {
-		return []string{"~/" + hostname}
+		resp = resp.Insert("~/" + hostname)
 	}
 	return resp
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/agentgateway/agentgateway/go/api"
 	"istio.io/istio/pilot/pkg/util/protoconv"
@@ -12,6 +13,7 @@ import (
 	"istio.io/istio/pkg/kube/krt"
 	"istio.io/istio/pkg/ptr"
 	"istio.io/istio/pkg/slices"
+	"istio.io/istio/pkg/util/sets"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -160,7 +162,7 @@ type GatewayListener struct {
 	ParentObject ParentKey
 	ParentInfo   ParentInfo
 	TLSInfo      *TLSInfo
-	Valid        bool
+	State        int
 }
 
 func (g GatewayListener) ResourceName() string {
@@ -178,7 +180,7 @@ func (g GatewayListener) Equals(other GatewayListener) bool {
 			return false
 		}
 	}
-	return g.Valid == other.Valid && g.Name == other.Name && g.ParentGateway == other.ParentGateway && g.ParentObject == other.ParentObject && g.ParentInfo.Equals(other.ParentInfo)
+	return g.State == other.State && g.Name == other.Name && g.ParentGateway == other.ParentGateway && g.ParentObject == other.ParentObject && g.ParentInfo.Equals(other.ParentInfo)
 }
 
 func (g ParentInfo) Equals(other ParentInfo) bool {
@@ -192,7 +194,7 @@ func (g ParentInfo) Equals(other ParentInfo) bool {
 		slices.EqualFunc(g.AllowedKinds, other.AllowedKinds, func(a, b gwv1.RouteGroupKind) bool {
 			return a.Kind == b.Kind && ptr.Equal(a.Group, b.Group)
 		}) &&
-		slices.Equal(g.Hostnames, other.Hostnames)
+		g.Hostnames.Equals(other.Hostnames)
 }
 
 type GatewayCollectionConfig struct {
@@ -261,7 +263,7 @@ func GatewayTransformationFunc(cfg GatewayCollectionConfig) func(ctx krt.Handler
 			// Attached Routes count starts at 0 and gets updated later in the status syncer
 			// when the real count is available after route processing
 
-			hostnames, tlsInfo, updatedStatus, programmed := BuildListener(ctx, cfg.Secrets, cfg.ConfigMaps, cfg.Grants, cfg.Namespaces, obj, status.Listeners, kgw, l, i, nil)
+			hostnames, tlsInfo, updatedStatus, state := BuildListener(ctx, cfg.Secrets, cfg.ConfigMaps, cfg.Grants, cfg.Namespaces, obj, status.Listeners, kgw, l, i, nil)
 			status.Listeners = updatedStatus
 
 			lstatus := status.Listeners[i]
@@ -298,11 +300,11 @@ func GatewayTransformationFunc(cfg GatewayCollectionConfig) func(ctx krt.Handler
 
 			res := &GatewayListener{
 				Name:          name,
-				Valid:         programmed,
+				State:         state,
 				TLSInfo:       tlsInfo,
 				ParentGateway: config.NamespacedName(obj),
 				ParentObject: ParentKey{
-					Kind:      wellknown.GatewayGVK,
+					GVK:      wellknown.GatewayGVK,
 					Name:      obj.Name,
 					Namespace: obj.Namespace,
 				},
@@ -315,23 +317,78 @@ func GatewayTransformationFunc(cfg GatewayCollectionConfig) func(ctx krt.Handler
 			})
 			result = append(result, res)
 		}
+
 		listenersFromSets := krt.Fetch(ctx, cfg.ListenerSets, krt.FilterIndex(cfg.listenerIndex, config.NamespacedName(obj)))
+		// Sort by listener precedence
+		// Ref: https://gateway-api.sigs.k8s.io/geps/gep-1713/#listener-precedence
+		// - ListenerSet ordered by creation time (oldest first)
+		// - ListenerSet ordered alphabetically by “{namespace}/{name}”
+		slices.SortFunc(listenersFromSets, func(a, b ListenerSet) int {
+			// primary sort: creation timestamp (oldest first)
+			if cmp := a.ParentInfo.CreationTimestamp.Compare(b.ParentInfo.CreationTimestamp.Time); cmp != 0 {
+				return cmp
+			}
+			// secondary sort: alphabetically by "{namespace}/{name}"
+			return strings.Compare(a.Parent.String(), b.Parent.String())
+		})
+
 		for _, ls := range listenersFromSets {
 			result = append(result, &GatewayListener{
 				Name:          ls.Name,
 				ParentGateway: config.NamespacedName(obj),
 				ParentObject: ParentKey{
-					Kind:      wellknown.XListenerSetGVK,
+					GVK:      wellknown.XListenerSetGVK,
 					Name:      ls.Parent.Name,
 					Namespace: ls.Parent.Namespace,
 				},
 				TLSInfo:    ls.TLSInfo,
 				ParentInfo: ls.ParentInfo,
-				Valid:      ls.Valid,
+				State:      ls.State,
 			})
 		}
+
+		validateListeners(result)
+		attachedListenerSet := map[string]struct{}{}
+		for _, listener := range result {
+			if listener.State == LISTENER_VALID {
+				attachedListenerSet[listener.ParentObject.String()] = struct{}{}
+			}
+		}
+		// Subtract one for the gateway itself
+		attachedListenerSetCount := len(attachedListenerSet) - 1
+		if attachedListenerSetCount > 0 {
+			gwReporter.SetAttachedListenerSets(int32(attachedListenerSetCount))
+		}
+
 		gws := rm.BuildGWStatus(context.Background(), *obj, nil)
 		return gws, result
+	}
+}
+
+type portProtocol struct {
+	hostnames sets.String
+	protocol  gwv1.ProtocolType
+}
+
+func validateListeners(listeners []*GatewayListener) {
+	portMap := make(map[gwv1.PortNumber]*portProtocol)
+	for _, listener := range listeners {
+		if p, ok := portMap[listener.ParentInfo.Port]; ok {
+			if p.protocol == listener.ParentInfo.Protocol {
+				if p.hostnames.Intersection(listener.ParentInfo.Hostnames).Len() == 0 {
+					p.hostnames = p.hostnames.Union(listener.ParentInfo.Hostnames)
+				} else {
+					listener.State = LISTENER_HOSTNAME_CONFLICT
+				}
+			} else {
+				listener.State = LISTENER_PROTOCOL_CONFLICT
+			}
+		} else {
+			portMap[listener.ParentInfo.Port] = &portProtocol{
+				hostnames: listener.ParentInfo.Hostnames,
+				protocol:  listener.ParentInfo.Protocol,
+			}
+		}
 	}
 }
 
@@ -343,7 +400,7 @@ type ListenerSet struct {
 	ParentInfo    ParentInfo           `json:"parentInfo"`
 	TLSInfo       *TLSInfo             `json:"tlsInfo"`
 	GatewayParent types.NamespacedName `json:"gatewayParent"`
-	Valid         bool                 `json:"valid"`
+	State         int                  `json:"state"`
 }
 
 func (g ListenerSet) ResourceName() string {
@@ -361,7 +418,7 @@ func (g ListenerSet) Equals(other ListenerSet) bool {
 	}
 	return g.Name == other.Name &&
 		g.GatewayParent == other.GatewayParent &&
-		g.Valid == other.Valid
+		g.State == other.State
 }
 
 func ListenerSetCollection(
@@ -411,7 +468,7 @@ func ListenerSetCollection(
 			if !NamespaceAcceptedByAllowListeners(obj.Namespace, parentGwObj, func(s string) *corev1.Namespace {
 				return ptr.Flatten(krt.FetchOne(ctx, namespaces, krt.FilterKey(s)))
 			}) {
-				//reportNotAllowedListenerSet(status, obj)
+				reportNotAllowedListenerSet(status, obj)
 				return status, nil
 			}
 
@@ -427,7 +484,7 @@ func ListenerSetCollection(
 				l.Port = gatewayx.PortNumber(port)
 				standardListener := convertListenerSetToListener(l)
 				originalStatus := slices.Map(status.Listeners, convertListenerSetStatusToStandardStatus)
-				hostnames, tlsInfo, updatedStatus, programmed := BuildListener(ctx, secrets, configMaps, grants, namespaces,
+				hostnames, tlsInfo, updatedStatus, state := BuildListener(ctx, secrets, configMaps, grants, namespaces,
 					obj, originalStatus, parentGwObj.Spec, standardListener, i, portErr)
 				status.Listeners = slices.Map(updatedStatus, convertStandardStatusToListenerSetStatus(l))
 
@@ -439,20 +496,21 @@ func ListenerSetCollection(
 
 				allowed, _ := GenerateSupportedKinds(standardListener)
 				pri := ParentInfo{
-					ParentGateway:    config.NamespacedName(parentGwObj),
-					InternalName:     obj.Namespace + "/" + name,
-					AllowedKinds:     allowed,
-					Hostnames:        hostnames,
-					OriginalHostname: string(ptr.OrEmpty(l.Hostname)),
-					SectionName:      l.Name,
-					Port:             gwv1.PortNumber(l.Port),
-					Protocol:         l.Protocol,
-					TLSPassthrough:   l.TLS != nil && l.TLS.Mode != nil && *l.TLS.Mode == gwv1.TLSModePassthrough,
+					ParentGateway:     config.NamespacedName(parentGwObj),
+					InternalName:      obj.Namespace + "/" + name,
+					AllowedKinds:      allowed,
+					Hostnames:         hostnames,
+					OriginalHostname:  string(ptr.OrEmpty(l.Hostname)),
+					SectionName:       l.Name,
+					Port:              gwv1.PortNumber(l.Port),
+					Protocol:          l.Protocol,
+					TLSPassthrough:    l.TLS != nil && l.TLS.Mode != nil && *l.TLS.Mode == gwv1.TLSModePassthrough,
+					CreationTimestamp: obj.GetCreationTimestamp(),
 				}
 
 				res := ListenerSet{
 					Name:          name,
-					Valid:         programmed,
+					State:         state,
 					TLSInfo:       tlsInfo,
 					Parent:        config.NamespacedName(obj),
 					GatewayParent: config.NamespacedName(parentGwObj),
@@ -464,6 +522,24 @@ func ListenerSetCollection(
 			reportListenerSetStatus(obj, status)
 			return status, result
 		}, krtopts.ToOptions("ListenerSets")...)
+}
+
+func reportNotAllowedListenerSet(status *gatewayx.ListenerSetStatus, obj *gatewayx.XListenerSet) {
+	notAllowedMessage := "Gateway does not allow ListenerSet attachment"
+	gatewayConditions := map[string]*Condition{
+		string(gwv1.GatewayConditionAccepted): {
+			Reason:  string(gatewayx.ListenerSetReasonNotAllowed),
+			Status:  metav1.ConditionFalse,
+			Message: notAllowedMessage,
+		},
+		string(gwv1.GatewayConditionProgrammed): {
+			Reason:  string(gatewayx.ListenerSetReasonNotAllowed),
+			Status:  metav1.ConditionFalse,
+			Message: notAllowedMessage,
+		},
+	}
+
+	status.Conditions = SetConditions(obj.Generation, status.Conditions, gatewayConditions)
 }
 
 // RouteParents holds information about things Routes can reference as parents.
@@ -588,4 +664,51 @@ func reportListenerSetStatus(
 	//setProgrammedCondition(gatewayConditions, internal, gatewayServices, warnings, allUsable)
 
 	gs.Conditions = SetConditions(obj.Generation, gs.Conditions, gatewayConditions)
+}
+
+func ReportListenerSetWithConflicts(status *gatewayx.ListenerSetStatus, obj *gatewayx.XListenerSet, accepted bool) {
+	condition := metav1.ConditionFalse
+	if accepted {
+		condition = metav1.ConditionTrue
+	}
+	programmedReason := gatewayx.ListenerSetReasonListenersNotValid
+	if accepted {
+		programmedReason = gatewayx.ListenerSetReasonProgrammed
+	}
+	// In case any listeners are invalid, this status should be set even if the gateway / listenerset is accepted
+	// https://github.com/kubernetes-sigs/gateway-api/blob/8fe8316f5792a7830a49c800f89fe689e0df042e/apisx/v1alpha1/xlistenerset_types.go#L396
+	gatewayConditions := map[string]*Condition{
+		string(gwv1.GatewayConditionAccepted): {
+			Status: condition,
+			Reason: string(gatewayx.ListenerSetReasonListenersNotValid),
+		},
+		string(gwv1.GatewayConditionProgrammed): {
+			Status: condition,
+			Reason: string(programmedReason),
+		},
+	}
+
+	status.Conditions = SetConditions(obj.Generation, status.Conditions, gatewayConditions)
+}
+
+func ReportListenerSetListenerConflicts(status *gatewayx.ListenerEntryStatus, obj *gatewayx.XListenerSet, reason string, message string) {
+	gatewayConditions := map[string]*Condition{
+		string(gwv1.ListenerConditionConflicted): {
+			Status:  metav1.ConditionTrue,
+			Reason:  reason,
+			Message: message,
+		},
+		string(gwv1.GatewayConditionAccepted): {
+			Status:  metav1.ConditionFalse,
+			Reason:  reason,
+			Message: message,
+		},
+		string(gwv1.GatewayConditionProgrammed): {
+			Status:  metav1.ConditionFalse,
+			Reason:  reason,
+			Message: message,
+		},
+	}
+
+	status.Conditions = SetConditions(obj.Generation, status.Conditions, gatewayConditions)
 }
