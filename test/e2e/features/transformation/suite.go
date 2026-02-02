@@ -59,6 +59,7 @@ var (
 	transformForMatchQueryManifest       = filepath.Join(fsutils.MustGetThisDir(), "testdata", "transform-for-match-query.yaml")
 	transformForMatchMethodManifest      = filepath.Join(fsutils.MustGetThisDir(), "testdata", "transform-for-match-method.yaml")
 	transformForHeaderToBodyJsonManifest = filepath.Join(fsutils.MustGetThisDir(), "testdata", "transform-for-header-to-body-json.yaml")
+	transformForClearRouteCacheManifest  = filepath.Join(fsutils.MustGetThisDir(), "testdata", "transform-for-clear-route-cache.yaml")
 
 	proxyObjectMeta = metav1.ObjectMeta{
 		Name:      "gw",
@@ -81,6 +82,7 @@ var (
 			transformForMatchPathManifest,
 			transformForMatchQueryManifest,
 			transformForHeaderToBodyJsonManifest,
+			transformForClearRouteCacheManifest,
 		},
 	}
 
@@ -660,6 +662,23 @@ func selectCommonTestCases(indices ...int) []transformationTestCase {
 			},
 			req: &testmatchers.HttpRequest{
 				Method: "POST",
+			},
+		},
+		{
+			// test 17
+			name:      "clear route cache",
+			routeName: "example-route-for-clear-route-cache",
+			opts: []curl.Option{
+				curl.WithHeader("x-test-header", "test-value"),
+			},
+			resp: &testmatchers.HttpResponse{
+				StatusCode: http.StatusOK,
+				Headers:    map[string]any{},
+			},
+			req: &testmatchers.HttpRequest{
+				Headers: map[string]any{
+					"x-cache-cleared": "true",
+				},
 			},
 		},
 	}

@@ -1,0 +1,73 @@
+# This test demonstrates that the clearRouteCache field in transformation policies
+# enables route re-matching after headers are transformed.
+#
+# Test scenario:
+# 1. ListenerPolicy removes x-cache-cleared header from all incoming requests (early processing)
+# 2. HTTPRoute matches only requests with x-cache-cleared: true header
+# 3. TrafficPolicy transformation adds x-cache-cleared: true header
+# 4. With clearRouteCache: true, the route cache is cleared after transformation,
+#    allowing route re-matching with the newly transformed headers
+#
+# Without clearRouteCache, the route would not match because:
+# - Initial route selection happens before transformation
+# - Route cache is not cleared, so transformation happens but route matching is not re-evaluated
+# - Request would be rejected because initial route selection failed
+#
+# This tests a real-world use case where policies at different levels (listener + route)
+# interact with transformations to conditionally route requests based on computed headers.
+
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: example-route-for-clear-route-cache
+spec:
+  parentRefs:
+    - name: gw
+  hostnames:
+    - "example-clear-cache.com"
+  rules:
+    # Route only matches if request has x-cache-cleared: true header
+    - matches:
+        - headers:
+            - name: x-cache-cleared
+              value: "true"
+      backendRefs:
+        - name: simple-svc
+          port: 8080
+---
+# ListenerPolicy removes x-cache-cleared from all incoming requests early in the pipeline
+# This simulates a real-world scenario where headers are sanitized/removed for security
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: ListenerPolicy
+metadata:
+  name: listener-sanitize-headers
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: gw
+  default:
+    httpSettings:
+      earlyRequestHeaderModifier:
+        remove:
+          - x-cache-cleared
+---
+# TrafficPolicy transformation adds the header and enables route cache clearing
+# This allows the transformation to affect route selection
+apiVersion: gateway.kgateway.dev/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: example-traffic-policy-for-clear-route-cache
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: example-route-for-clear-route-cache
+  transformation:
+    # clearRouteCache: true enables the route to be re-selected after transformation
+    # This is necessary for the newly transformed x-cache-cleared header to take effect
+    clearRouteCache: true
+    request:
+      set:
+        - name: x-cache-cleared
+          value: "true"
