@@ -92,7 +92,7 @@ spec:
   parentRefs:
   - name: test-listenerset
     group: gateway.networking.k8s.io
-    kind: ListenerSet
+      kind: ListenerSet
   hostnames:
   - "www.example.com"
   rules:

@@ -105,7 +105,7 @@ spec:
   parentRefs:
   - name: ls-1
     group: gateway.networking.k8s.io
-    kind: ListenerSet
+      kind: ListenerSet
   rules:
   - matches:
     - path:
@@ -124,7 +124,7 @@ spec:
   parentRefs:
   - name: ls-2
     group: gateway.networking.k8s.io
-    kind: ListenerSet
+      kind: ListenerSet
   rules:
   - matches:
     - path:

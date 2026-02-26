@@ -50,7 +50,7 @@ spec:
   parentRefs:
   - name: ls-tls-options
     group: gateway.networking.k8s.io
-    kind: ListenerSet
+      kind: ListenerSet
     sectionName: https-ls
   rules:
   - matches:

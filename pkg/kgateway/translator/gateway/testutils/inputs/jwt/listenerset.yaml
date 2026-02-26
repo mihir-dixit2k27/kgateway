@@ -37,7 +37,7 @@ spec:
   parentRefs:
     - name: example-listenerset
       group: gateway.networking.k8s.io
-    kind: ListenerSet
+      kind: ListenerSet
   hostnames:
     - "example.com"
   rules:
@@ -76,7 +76,7 @@ spec:
   targetRefs:
     - name: example-listenerset
       group: gateway.networking.k8s.io
-    kind: ListenerSet
+      kind: ListenerSet
   jwtAuth:
     extensionRef:
       name: jwt-ext
