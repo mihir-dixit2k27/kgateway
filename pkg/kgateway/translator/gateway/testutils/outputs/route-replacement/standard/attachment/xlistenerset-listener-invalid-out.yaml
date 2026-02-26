@@ -205,8 +205,8 @@ Statuses:
           type: ResolvedRefs
         controllerName: kgateway
         parentRef:
-          group: gateway.networking.x-k8s.io
-          kind: XListenerSet
+          group: gateway.networking.k8s.io
+          kind: ListenerSet
           name: test-listenerset
   listenerSets:
     gwtest/test-listenerset:
@@ -284,8 +284,8 @@ Statuses:
     TrafficPolicy/gwtest/invalid-traffic-policy:
       ancestors:
       - ancestorRef:
-          group: gateway.networking.x-k8s.io
-          kind: XListenerSet
+          group: gateway.networking.k8s.io
+          kind: ListenerSet
           name: test-listenerset
           namespace: gwtest
         conditions:

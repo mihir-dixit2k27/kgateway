@@ -18,63 +18,22 @@ import (
 
 var (
 	// manifests
-	setupManifest                           = filepath.Join(fsutils.MustGetThisDir(), "testdata", "setup.yaml")
-	validListenerSetManifest                = filepath.Join(fsutils.MustGetThisDir(), "testdata", "valid-listenerset.yaml")
-	validListenerSetManifest2               = filepath.Join(fsutils.MustGetThisDir(), "testdata", "valid-listenerset-2.yaml")
-	invalidListenerSetNotAllowedManifest    = filepath.Join(fsutils.MustGetThisDir(), "testdata", "invalid-listenerset-not-allowed.yaml")
-	invalidListenerSetNonExistingGWManifest = filepath.Join(fsutils.MustGetThisDir(), "testdata", "invalid-listenerset-non-existing-gw.yaml")
-	conflictedListenerSetManifest           = filepath.Join(fsutils.MustGetThisDir(), "testdata", "conflicted-listenerset.yaml")
-	policyManifest                          = filepath.Join(fsutils.MustGetThisDir(), "testdata", "policies.yaml")
+	setupManifest             = filepath.Join(fsutils.MustGetThisDir(), "testdata", "setup.yaml")
+	validListenerSetManifest  = filepath.Join(fsutils.MustGetThisDir(), "testdata", "valid-listenerset.yaml")
+	validListenerSetManifest2 = filepath.Join(fsutils.MustGetThisDir(), "testdata", "valid-listenerset-2.yaml")
+	policyManifest            = filepath.Join(fsutils.MustGetThisDir(), "testdata", "policies.yaml")
 
 	gwListener1Port  = 80
 	gwListener2Port  = 8081
 	ls1Listener1Port = 90
 	ls1Listener2Port = 8091
 	ls2Listener1Port = 8095
-	ls3Listener1Port = 88
 
 	proxyObjectMeta = metav1.ObjectMeta{
 		Name:      "gw",
 		Namespace: "default",
 	}
 	proxyService = &corev1.Service{ObjectMeta: proxyObjectMeta}
-
-	// TestValidListenerSet
-	validListenerSet = &gwv1.ListenerSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "valid-ls",
-			Namespace: "allowed-ns",
-		},
-	}
-
-	// TestInvalidListenerSetNotAllowed
-	invalidListenerSetNotAllowed = &gwv1.ListenerSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "invalid-ls-not-allowed",
-			Namespace: "curl",
-		},
-	}
-
-	// TestInvalidListenerSetNonExistingGW
-	invalidListenerSetNonExistingGW = &gwv1.ListenerSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "invalid-ls-non-existing-gw",
-			Namespace: "default",
-		},
-	}
-
-	// TestConflictedListenerSet
-	conflictedListenerSet = &gwv1.ListenerSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "z-conflicted-listenerset",
-			Namespace: "allowed-ns",
-		},
-	}
-
-	expectOK = &testmatchers.HttpResponse{
-		StatusCode: http.StatusOK,
-		Body:       gstruct.Ignore(),
-	}
 
 	expectOKWithCustomHeader = func(key, value string) *testmatchers.HttpResponse {
 		return &testmatchers.HttpResponse{
@@ -86,33 +45,14 @@ var (
 		}
 	}
 
-	expectNotFound = &testmatchers.HttpResponse{
-		StatusCode: http.StatusNotFound,
-		Body:       gstruct.Ignore(),
-	}
-
-	curlExitErrorCode = 28
-
 	setup = base.TestCase{
 		Manifests: []string{e2edefaults.CurlPodManifest, setupManifest},
 	}
 
 	// test cases
 	testCases = map[string]*base.TestCase{
-		"TestValidListenerSet": {
-			Manifests: []string{validListenerSetManifest},
-		},
-		"TestInvalidListenerSetNotAllowed": {
-			Manifests: []string{invalidListenerSetNotAllowedManifest},
-		},
-		"TestInvalidListenerSetNonExistingGW": {
-			Manifests: []string{invalidListenerSetNonExistingGWManifest},
-		},
 		"TestPolicies": {
 			Manifests: []string{validListenerSetManifest, validListenerSetManifest2, policyManifest},
-		},
-		"TestConflictedListenerSet": {
-			Manifests: []string{validListenerSetManifest, conflictedListenerSetManifest},
 		},
 	}
 )

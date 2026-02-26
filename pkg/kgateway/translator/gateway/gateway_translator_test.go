@@ -2419,13 +2419,13 @@ func TestValidation(t *testing.T) {
 			minMode:   apisettings.ValidationStandard,
 		},
 		{
-			name:      "XListenerSet",
+			name:      "ListenerSet",
 			category:  "attachment",
 			inputFile: "xlistenerset-invalid.yaml",
 			minMode:   apisettings.ValidationStandard,
 		},
 		{
-			name:      "XListenerSet/Listener",
+			name:      "ListenerSet/Listener",
 			category:  "attachment",
 			inputFile: "xlistenerset-listener-invalid.yaml",
 			minMode:   apisettings.ValidationStandard,

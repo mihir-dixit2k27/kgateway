@@ -266,7 +266,7 @@ Statuses:
           group: gateway.networking.k8s.io
           kind: Gateway
           name: example-gateway
-    gwtest/test-route-xlistenerset:
+    gwtest/test-route-listenerset:
       parents:
       - conditions:
         - lastTransitionTime: null
@@ -281,8 +281,8 @@ Statuses:
           type: ResolvedRefs
         controllerName: kgateway
         parentRef:
-          group: gateway.networking.x-k8s.io
-          kind: XListenerSet
+          group: gateway.networking.k8s.io
+          kind: ListenerSet
           name: test-listenerset
   listenerSets:
     gwtest/test-listenerset:
@@ -381,8 +381,8 @@ Statuses:
           type: Attached
         controllerName: kgateway.dev/kgateway
       - ancestorRef:
-          group: gateway.networking.x-k8s.io
-          kind: XListenerSet
+          group: gateway.networking.k8s.io
+          kind: ListenerSet
           name: test-listenerset
           namespace: gwtest
         conditions:
@@ -399,11 +399,11 @@ Statuses:
           status: "False"
           type: Attached
         controllerName: kgateway.dev/kgateway
-    TrafficPolicy/gwtest/xlistenerset-wide-invalid-policy:
+    TrafficPolicy/gwtest/listenerset-wide-invalid-policy:
       ancestors:
       - ancestorRef:
-          group: gateway.networking.x-k8s.io
-          kind: XListenerSet
+          group: gateway.networking.k8s.io
+          kind: ListenerSet
           name: test-listenerset
           namespace: gwtest
         conditions:
