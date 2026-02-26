@@ -18,7 +18,6 @@ import (
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 	gwv1b1 "sigs.k8s.io/gateway-api/apis/v1beta1"
-	gwxv1a1 "sigs.k8s.io/gateway-api/apisx/v1alpha1"
 
 	apiannotations "github.com/kgateway-dev/kgateway/v2/api/annotations"
 	apilabels "github.com/kgateway-dev/kgateway/v2/api/labels"
@@ -328,13 +327,13 @@ type GatewayIndexConfig struct {
 	EnvoyControllerName string
 	PolicyIndex         *PolicyIndex
 	Gateways            krt.Collection[*gwv1.Gateway]
-	ListenerSets        krt.Collection[*gwxv1a1.XListenerSet]
+	ListenerSets        krt.Collection[*gwv1.ListenerSet]
 	GatewayClasses      krt.Collection[*gwv1.GatewayClass]
 	Namespaces          krt.Collection[NamespaceMetadata]
 
 	gatewaysForDeployerTransformationFunc func(config *GatewayIndexConfig) func(kctx krt.HandlerContext, gw *gwv1.Gateway) *ir.GatewayForDeployer
 	gatewaysForEnvoyTransformationFunc    func(config *GatewayIndexConfig) func(kctx krt.HandlerContext, gw *gwv1.Gateway) *ir.Gateway
-	byParentRefIndex                      krt.Index[TargetRefIndexKey, *gwxv1a1.XListenerSet]
+	byParentRefIndex                      krt.Index[TargetRefIndexKey, *gwv1.ListenerSet]
 }
 
 func NewGatewayIndex(config GatewayIndexConfig, opts ...GatewayIndexConfigOption) *GatewayIndex {
@@ -466,13 +465,13 @@ func GatewaysForEnvoyTransformationFunc(config *GatewayIndexConfig) func(kctx kr
 		// Ref: https://gateway-api.sigs.k8s.io/geps/gep-1713/#listener-precedence
 		// - ListenerSet ordered by creation time (oldest first)
 		// - ListenerSet ordered alphabetically by “{namespace}/{name}”
-		slices.SortFunc(listenerSets, func(a, b *gwxv1a1.XListenerSet) int {
+		slices.SortFunc(listenerSets, func(a, b *gwv1.ListenerSet) int {
 			// primary sort: creation timestamp (oldest first)
 			if cmp := a.GetCreationTimestamp().Compare(b.GetCreationTimestamp().Time); cmp != 0 {
 				return cmp
 			}
 			// secondary sort: alphabetically by "{namespace}/{name}"
-			nnsString := func(ls *gwxv1a1.XListenerSet) string {
+			nnsString := func(ls *gwv1.ListenerSet) string {
 				return fmt.Sprintf("%s/%s", ls.Namespace, ls.Name)
 			}
 			return strings.Compare(nnsString(a), nnsString(b))

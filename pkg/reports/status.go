@@ -14,7 +14,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
-	gwxv1a1 "sigs.k8s.io/gateway-api/apisx/v1alpha1"
 
 	"github.com/kgateway-dev/kgateway/v2/pkg/kgateway/translator/utils"
 	"github.com/kgateway-dev/kgateway/v2/pkg/kgateway/wellknown"
@@ -155,7 +154,7 @@ func handleInvalidAddresses(report *GatewayReport, g *gwv1.Gateway) {
 	}
 }
 
-func (r *ReportMap) BuildListenerSetStatus(ctx context.Context, ls gwxv1a1.XListenerSet) *gwxv1a1.ListenerSetStatus {
+func (r *ReportMap) BuildListenerSetStatus(ctx context.Context, ls gwv1.ListenerSet) *gwv1.ListenerSetStatus {
 	lsReport := r.ListenerSet(&ls)
 	if lsReport == nil {
 		return nil
@@ -180,7 +179,7 @@ func (r *ReportMap) BuildListenerSetStatus(ctx context.Context, ls gwxv1a1.XList
 			AddMissingListenerConditions(lisReport)
 
 			finalConditions := make([]metav1.Condition, 0, len(lisReport.Status.Conditions))
-			oldLisStatusIndex := slices.IndexFunc(ls.Status.Listeners, func(l gwxv1a1.ListenerEntryStatus) bool {
+			oldLisStatusIndex := slices.IndexFunc(ls.Status.Listeners, func(l gwv1.ListenerEntryStatus) bool {
 				return l.Name == lis.Name
 			})
 			for _, lisCondition := range lisReport.Status.Conditions {
@@ -258,11 +257,11 @@ func (r *ReportMap) BuildListenerSetStatus(ctx context.Context, ls gwxv1a1.XList
 		}
 	}
 
-	finalLsStatus := gwxv1a1.ListenerSetStatus{}
+	finalLsStatus := gwv1.ListenerSetStatus{}
 	finalLsStatus.Conditions = finalConditions
-	fl := make([]gwxv1a1.ListenerEntryStatus, 0, len(finalListeners))
+	fl := make([]gwv1.ListenerEntryStatus, 0, len(finalListeners))
 	for _, f := range finalListeners {
-		fl = append(fl, gwxv1a1.ListenerEntryStatus{
+		fl = append(fl, gwv1.ListenerEntryStatus{
 			Name:           f.Name,
 			SupportedKinds: f.SupportedKinds,
 			AttachedRoutes: f.AttachedRoutes,

@@ -14,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
-	gwxv1a1 "sigs.k8s.io/gateway-api/apisx/v1alpha1"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1/kgateway"
 	"github.com/kgateway-dev/kgateway/v2/test/gomega/matchers"
@@ -297,13 +296,13 @@ func (p *Provider) EventuallyListenerSetStatus(
 	ctx context.Context,
 	name string,
 	namespace string,
-	status gwxv1a1.ListenerSetStatus,
+	status gwv1.ListenerSetStatus,
 	timeout ...time.Duration,
 ) {
 	ginkgo.GinkgoHelper()
 	currentTimeout, pollingInterval := helpers.GetTimeouts(timeout...)
 	p.Gomega.Eventually(func(g gomega.Gomega) {
-		ls := &gwxv1a1.XListenerSet{}
+		ls := &gwv1.ListenerSet{}
 		err := p.clusterContext.Client.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, ls)
 		g.Expect(err).NotTo(gomega.HaveOccurred(), fmt.Sprintf("failed to get listenerset %s/%s", namespace, name))
 
@@ -338,7 +337,7 @@ func (p *Provider) EventuallyListenerSetStatus(
 	}, currentTimeout, pollingInterval).Should(gomega.Succeed())
 }
 
-func getListenerEntryStatus(listeners []gwxv1a1.ListenerEntryStatus, name string) *gwxv1a1.ListenerEntryStatus {
+func getListenerEntryStatus(listeners []gwv1.ListenerEntryStatus, name string) *gwv1.ListenerEntryStatus {
 	for i := range listeners {
 		if string(listeners[i].Name) == name {
 			return &listeners[i]

@@ -192,14 +192,14 @@ func TestCollectionMetricEventHandler(t *testing.T) {
 			parent:    testGateway,
 			resource:  "XListenerSet",
 			inputs: []any{
-				&gwxv1a1.XListenerSet{
+				&gwv1.ListenerSet{
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      testName,
 						Namespace: testNamespace,
 						Labels:    map[string]string{"a": "b"},
 					},
-					Spec: gwxv1a1.ListenerSetSpec{
+					Spec: gwv1.ListenerSetSpec{
 						ParentRef: gwxv1a1.ParentGatewayReference{
 							Name:      testGateway,
 							Kind:      ptr.To(gwxv1a1.Kind("Gateway")),

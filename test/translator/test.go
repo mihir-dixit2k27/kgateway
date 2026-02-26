@@ -34,7 +34,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
-	gwxv1a1 "sigs.k8s.io/gateway-api/apisx/v1alpha1"
 
 	apisettings "github.com/kgateway-dev/kgateway/v2/api/settings"
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1/kgateway"
@@ -341,7 +340,7 @@ type ActualTestResult struct {
 	Proxy        *irtranslator.TranslationResult
 	ReportsMap   reports.ReportMap
 	Gateways     map[types.NamespacedName]*gwv1.Gateway
-	ListenerSets map[types.NamespacedName]*gwxv1a1.XListenerSet
+	ListenerSets map[types.NamespacedName]*gwv1.ListenerSet
 	Clusters     []*envoyclusterv3.Cluster
 }
 
@@ -620,7 +619,7 @@ func AreReportsSuccess(gwNN types.NamespacedName, reportsMap reports.ReportMap) 
 	}
 
 	for ls := range reportsMap.ListenerSets[wellknown.XListenerSetGVK] {
-		l := gwxv1a1.XListenerSet{
+		l := gwv1.ListenerSet{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      ls.Name,
 				Namespace: ls.Namespace,
@@ -797,9 +796,9 @@ func (tc TestCase) Run(
 	// Build a map of all XListenerSets by nn for status building. We extract these
 	// from the loaded input objects since they're not directly available via InitCollections()
 	// (i.e. no dedicated KRT collection).
-	listenerSetMap := make(map[types.NamespacedName]*gwxv1a1.XListenerSet)
+	listenerSetMap := make(map[types.NamespacedName]*gwv1.ListenerSet)
 	for _, obj := range allObjs {
-		if ls, ok := obj.(*gwxv1a1.XListenerSet); ok {
+		if ls, ok := obj.(*gwv1.ListenerSet); ok {
 			listenerSetMap[client.ObjectKeyFromObject(ls)] = ls
 		}
 	}
