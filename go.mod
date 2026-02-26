@@ -4,7 +4,7 @@ go 1.26.0
 
 // replace sigs.k8s.io/gateway-api => ../gateway-api
 // replace sigs.k8s.io/gateway-api/conformance => ../gateway-api/conformance
-replace istio.io/istio => ../istio
+replace istio.io/istio => github.com/davidjumani/istio v0.0.0-20260226200540-eff3fd041637
 
 require (
 	github.com/avast/retry-go/v4 v4.7.0
