@@ -2102,7 +2102,7 @@ func TestBasic(t *testing.T) {
 		})
 	})
 
-	t.Run("XListenerSet with reserved port should be rejected", func(t *testing.T) {
+	t.Run("ListenerSet with reserved port should be rejected", func(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "validation/xlistenerset-reserved-port.yaml",
 			outputFile: "validation/xlistenerset-reserved-port.yaml",

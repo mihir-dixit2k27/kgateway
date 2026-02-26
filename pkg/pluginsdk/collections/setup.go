@@ -42,7 +42,7 @@ func (c *CommonCollections) InitCollections(
 	// ON_EXPERIMENTAL_PROMOTION : Remove this block
 	// Ref: https://github.com/kgateway-dev/kgateway/issues/12827
 	if globalSettings.EnableExperimentalGatewayAPIFeatures {
-		kubeRawListenerSets = krt.WrapClient(kclient.NewDelayedInformer[*gwv1.ListenerSet](c.Client, wellknown.XListenerSetGVR, kubetypes.StandardInformer, filter), c.KrtOpts.ToOptions("KubeListenerSets")...)
+		kubeRawListenerSets = krt.WrapClient(kclient.NewDelayedInformer[*gwv1.ListenerSet](c.Client, wellknown.ListenerSetGVR, kubetypes.StandardInformer, filter), c.KrtOpts.ToOptions("KubeListenerSets")...)
 	} else {
 		// If disabled, still build a collection but make it always empty
 		kubeRawListenerSets = krt.NewStaticCollection[*gwv1.ListenerSet](nil, nil, c.KrtOpts.ToOptions("disable/KubeListenerSets")...)

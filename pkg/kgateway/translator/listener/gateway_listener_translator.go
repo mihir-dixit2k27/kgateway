@@ -895,7 +895,7 @@ func translateTLSConfig(
 			case *gwv1.Gateway:
 				parentGVK = wellknown.GatewayGVK
 			case *gwv1.ListenerSet:
-				parentGVK = wellknown.XListenerSetGVK
+				parentGVK = wellknown.ListenerSetGVK
 			}
 		}
 
@@ -1150,7 +1150,7 @@ func applyClientCertificateValidation(
 		case *gwv1.Gateway:
 			parentGVK = wellknown.GatewayGVK
 		case *gwv1.ListenerSet:
-			parentGVK = wellknown.XListenerSetGVK
+			parentGVK = wellknown.ListenerSetGVK
 		default:
 			return false, fmt.Errorf("unsupported parent type: %T", listener.Parent)
 		}

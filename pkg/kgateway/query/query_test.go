@@ -987,8 +987,8 @@ var _ = Describe("Query", func() {
 
 		lsHR := httpRoute()
 		lsHR.Name = "ls-route"
-		lsKind := gwv1.Kind(wellknown.XListenerSetKind)
-		lsGroup := gwv1.Group(wellknown.XListenerSetGroup)
+		lsKind := gwv1.Kind(wellknown.ListenerSetKind)
+		lsGroup := gwv1.Group(wellknown.ListenerSetGroup)
 		lsHR.Spec.ParentRefs = []gwv1.ParentReference{
 			{
 				Kind:  &lsKind,
@@ -1000,7 +1000,7 @@ var _ = Describe("Query", func() {
 		irGW := ir.Gateway{
 			Obj: gwWithListener,
 			AllowedListenerSets: map[schema.GroupVersionKind]ir.ListenerSets{
-				wellknown.XListenerSetGVK: []ir.ListenerSet{{Obj: lsWithListener}},
+				wellknown.ListenerSetGVK: []ir.ListenerSet{{Obj: lsWithListener}},
 			},
 		}
 
@@ -1209,6 +1209,6 @@ func ls() *gwv1.ListenerSet {
 			},
 		},
 	}
-	ls.SetGroupVersionKind(wellknown.XListenerSetGVK)
+	ls.SetGroupVersionKind(wellknown.ListenerSetGVK)
 	return ls
 }

@@ -35,13 +35,13 @@ func gwToIr(gw *gwv1.Gateway, allowedLS, deniedLS *gwv1.ListenerSet) *ir.Gateway
 	}
 	if deniedLS != nil {
 		out.DeniedListenerSets = map[schema.GroupVersionKind]ir.ListenerSets{
-			wellknown.XListenerSetGVK: []ir.ListenerSet{lsToIR(deniedLS)},
+			wellknown.ListenerSetGVK: []ir.ListenerSet{lsToIR(deniedLS)},
 		}
 	}
 	if allowedLS != nil {
 		allowedIrLs := lsToIR(allowedLS)
 		out.AllowedListenerSets = map[schema.GroupVersionKind]ir.ListenerSets{
-			wellknown.XListenerSetGVK: []ir.ListenerSet{allowedIrLs},
+			wellknown.ListenerSetGVK: []ir.ListenerSet{allowedIrLs},
 		}
 		out.Listeners = append(out.Listeners, allowedIrLs.Listeners...)
 	}

@@ -275,7 +275,7 @@ spec:
     kind: HTTPRoute
     name: test-route
   - group: gateway.networking.x-k8s.io
-    kind: XListenerSet
+    kind: ListenerSet
     name: test-listener
   targetSelectors:
   - group: gateway.networking.k8s.io
@@ -359,7 +359,7 @@ metadata:
 spec:
   targetRefs:
   - group: gateway.networking.x-k8s.io
-    kind: XListenerSet
+    kind: ListenerSet
     name: test-listener
 `,
 			wantErrors: []string{"targetRefs may only reference Gateway resources"},

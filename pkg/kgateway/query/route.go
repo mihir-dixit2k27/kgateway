@@ -332,7 +332,7 @@ func (r *gatewayQueries) GetRoutesForResource(kctx krt.HandlerContext, ctx conte
 		case *gwv1.Gateway:
 			gvk = wellknown.GatewayGVK
 		case *gwv1.ListenerSet:
-			gvk = wellknown.XListenerSetGVK
+			gvk = wellknown.ListenerSetGVK
 		}
 	}
 

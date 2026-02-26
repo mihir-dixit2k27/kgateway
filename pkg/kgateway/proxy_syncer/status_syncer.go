@@ -446,7 +446,7 @@ func (s *StatusSyncer) syncGatewayStatus(ctx context.Context, logger *slog.Logge
 func (s *StatusSyncer) syncListenerSetStatus(ctx context.Context, logger *slog.Logger, rm reports.ReportMap) {
 	// TODO: retry within loop per LS rather than as a full block
 	err := retry.Do(func() (rErr error) {
-		for lsnn := range rm.ListenerSets[wellknown.XListenerSetGVK] {
+		for lsnn := range rm.ListenerSets[wellknown.ListenerSetGVK] {
 			ls := gwv1.ListenerSet{}
 			err := s.mgr.GetClient().Get(ctx, lsnn, &ls)
 			if err != nil {
@@ -498,7 +498,7 @@ func (s *StatusSyncer) syncListenerSetStatus(ctx context.Context, logger *slog.L
 				metrics.EndResourceStatusSync(metrics.ResourceSyncDetails{
 					Namespace:    ls.Namespace,
 					Gateway:      string(ls.Spec.ParentRef.Name),
-					ResourceType: "XListenerSet",
+					ResourceType: "ListenerSet",
 					ResourceName: ls.Name,
 				})
 			}

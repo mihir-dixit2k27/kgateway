@@ -208,7 +208,7 @@ func isParentRefForResource(pRef *gwv1.ParentReference, resource client.Object, 
 		case *gwv1.Gateway:
 			gvk = wellknown.GatewayGVK
 		case *gwv1.ListenerSet:
-			gvk = wellknown.XListenerSetGVK
+			gvk = wellknown.ListenerSetGVK
 		}
 	}
 

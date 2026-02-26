@@ -549,7 +549,7 @@ func GetResourceMetricEventHandler[T any]() func(krt.Event[T]) {
 				namesOld = []string{clientObjectOld.(*gwv1.Gateway).Name}
 			}
 		case *gwv1.ListenerSet:
-			resourceType = "XListenerSet"
+			resourceType = "ListenerSet"
 			resourceName = obj.Name
 			namespace = obj.Namespace
 			names = []string{string(obj.Spec.ParentRef.Name)}

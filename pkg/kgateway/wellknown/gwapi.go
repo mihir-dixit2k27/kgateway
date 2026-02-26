@@ -7,13 +7,12 @@ import (
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 	gwv1b1 "sigs.k8s.io/gateway-api/apis/v1beta1"
-	gwxv1a1 "sigs.k8s.io/gateway-api/apisx/v1alpha1"
 )
 
 const (
 	// Group string for Gateway API resources
-	GatewayGroup      = gwv1.GroupName
-	XListenerSetGroup = gwxv1a1.GroupName
+	GatewayGroup     = gwv1.GroupName
+	ListenerSetGroup = gwv1.GroupName
 
 	// Kind strings
 	ServiceKind          = "Service"
@@ -27,9 +26,7 @@ const (
 	GatewayClassKind     = "GatewayClass"
 	ReferenceGrantKind   = "ReferenceGrant"
 	BackendTLSPolicyKind = "BackendTLSPolicy"
-
-	// Kind string for XListenerSet resource
-	XListenerSetKind = "XListenerSet"
+	ListenerSetKind      = "ListenerSet"
 
 	// List Kind strings
 	HTTPRouteListKind      = "HTTPRouteList"
@@ -129,14 +126,14 @@ var (
 		},
 	}
 
-	XListenerSetGVK = schema.GroupVersionKind{
-		Group:   XListenerSetGroup,
-		Version: gwxv1a1.GroupVersion.Version,
-		Kind:    XListenerSetKind,
+	ListenerSetGVK = schema.GroupVersionKind{
+		Group:   ListenerSetGroup,
+		Version: gwv1.GroupVersion.Version,
+		Kind:    ListenerSetKind,
 	}
-	XListenerSetGVR = schema.GroupVersionResource{
-		Group:    XListenerSetGroup,
-		Version:  gwxv1a1.GroupVersion.Version,
-		Resource: "xlistenersets",
+	ListenerSetGVR = schema.GroupVersionResource{
+		Group:    ListenerSetGroup,
+		Version:  gwv1.GroupVersion.Version,
+		Resource: "listenersets",
 	}
 )

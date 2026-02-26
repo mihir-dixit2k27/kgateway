@@ -618,7 +618,7 @@ func AreReportsSuccess(gwNN types.NamespacedName, reportsMap reports.ReportMap) 
 		}
 	}
 
-	for ls := range reportsMap.ListenerSets[wellknown.XListenerSetGVK] {
+	for ls := range reportsMap.ListenerSets[wellknown.ListenerSetGVK] {
 		l := gwv1.ListenerSet{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      ls.Name,
@@ -793,7 +793,7 @@ func (tc TestCase) Run(
 		gatewayMap[gwNN] = gw.Obj
 	}
 
-	// Build a map of all XListenerSets by nn for status building. We extract these
+	// Build a map of all ListenerSets by nn for status building. We extract these
 	// from the loaded input objects since they're not directly available via InitCollections()
 	// (i.e. no dedicated KRT collection).
 	listenerSetMap := make(map[types.NamespacedName]*gwv1.ListenerSet)
