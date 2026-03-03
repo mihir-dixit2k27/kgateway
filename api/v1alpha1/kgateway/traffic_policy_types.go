@@ -633,11 +633,12 @@ type StatPrefixConfig struct {
 	//                    in the resulting stat_prefix string (e.g. "default_my-route_%RULE_NAME%")
 	//                    and the controller will log a warning. To avoid this, either name your
 	//                    HTTPRoute rules or avoid using %RULE_NAME% when rules are unnamed.
-	// After template substitution, the resulting string must consist only of
-	// alphanumeric characters and underscores, as required by Envoy's stat naming rules.
+	// The value, including any template tokens and substituted names, must consist only of
+	// alphanumeric characters, underscores, hyphens, and percent signs. Percent signs are
+	// expected only as part of template tokens such as an unresolved %RULE_NAME%.
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=256
-	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_%]+$`
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_%-]+$`
 	Value string `json:"value"`
 }
