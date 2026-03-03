@@ -640,5 +640,6 @@ type StatPrefixConfig struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=256
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_%-]+$`
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_%-]+$`
 	Value string `json:"value"`
 }
