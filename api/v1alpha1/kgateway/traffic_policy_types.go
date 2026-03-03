@@ -635,11 +635,16 @@ type StatPrefixConfig struct {
 	//                    HTTPRoute rules or avoid using %RULE_NAME% when rules are unnamed.
 	// The value, including any template tokens and substituted names, must consist only of
 	// alphanumeric characters, underscores, hyphens, and percent signs. Percent signs are
-	// expected only as part of template tokens such as an unresolved %RULE_NAME%.
+	// expected only as part of template tokens (%NAMESPACE%, %NAME%, %RULE_NAME%).
+	// Note: Kubernetes resource names may contain hyphens, so resolved values like
+	// "default_my-route" are valid. Envoy accepts hyphens in stat_prefix strings.
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=256
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_%-]+$`
+<<<<<<< HEAD
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_%-]+$`
+=======
+>>>>>>> 0efdf836b6 (fix(trafficpolicy): update stat_prefix validation pattern to allow hyphens)
 	Value string `json:"value"`
 }
