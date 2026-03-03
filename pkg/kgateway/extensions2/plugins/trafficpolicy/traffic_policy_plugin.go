@@ -2,6 +2,7 @@ package trafficpolicy
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	envoyroutev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
@@ -105,6 +106,7 @@ type trafficPolicySpecIr struct {
 	urlRewrite      *urlRewriteIR
 	apiKeyAuth      *apiKeyAuthIR
 	oauth2          *oauthIR
+	statPrefix      *statPrefixIR
 }
 
 func (d *TrafficPolicy) CreationTime() time.Time {
@@ -183,6 +185,9 @@ func (d *TrafficPolicy) Equals(in any) bool {
 	if !d.spec.oauth2.Equals(d2.spec.oauth2) {
 		return false
 	}
+	if !d.spec.statPrefix.Equals(d2.spec.statPrefix) {
+		return false
+	}
 	return true
 }
 
@@ -210,6 +215,7 @@ func (p *TrafficPolicy) Validate() error {
 	validators = append(validators, p.spec.urlRewrite.Validate)
 	validators = append(validators, p.spec.apiKeyAuth.Validate)
 	validators = append(validators, p.spec.oauth2.Validate)
+	validators = append(validators, p.spec.statPrefix.Validate)
 	for _, validator := range validators {
 		if err := validator(); err != nil {
 			return err
@@ -384,7 +390,7 @@ func (p *trafficPolicyPluginGwPass) ApplyForRoute(pCtx *ir.RouteContext, outputR
 		return nil
 	}
 
-	p.handlePerRoutePolicies(policy.spec, outputRoute)
+	p.handlePerRoutePolicies(policy.spec, pCtx.In, outputRoute)
 	p.handlePolicies(pCtx.FilterChainName, &pCtx.TypedFilterConfig, policy.spec)
 
 	return nil
@@ -663,9 +669,11 @@ func (p *trafficPolicyPluginGwPass) handlePolicies(
 	p.handleOauth2(fcn, typedFilterConfig, spec.oauth2)
 }
 
-// handlePerRoutePolicies handles policies that are meant to be processed at the route level
+// handlePerRoutePolicies handles policies that are meant to be processed at the route level.
+// routeMatchIR provides the route metadata needed for stat_prefix template substitution.
 func (p *trafficPolicyPluginGwPass) handlePerRoutePolicies(
 	spec trafficPolicySpecIr,
+	routeMatchIR ir.HttpRouteRuleMatchIR,
 	out *envoyroutev3.Route,
 ) {
 	// A parent route rule with a delegated backend will not have RouteAction set
@@ -701,6 +709,34 @@ func (p *trafficPolicyPluginGwPass) handlePerRoutePolicies(
 
 	// Apply URL rewrite configuration
 	applyURLRewrite(spec.urlRewrite, out)
+
+	// Apply stat_prefix with template variable substitution.
+	// Template variables are resolved here using the live route context:
+	//   %NAMESPACE%  → parent HTTPRoute/GRPCRoute namespace
+	//   %NAME%       → parent HTTPRoute/GRPCRoute name
+	//   %RULE_NAME%  → HTTPRoute rule name (only substituted when the rule has a name set)
+	if spec.statPrefix != nil && spec.statPrefix.rawTemplate != "" {
+		val := spec.statPrefix.rawTemplate
+		if routeMatchIR.Parent != nil {
+			val = strings.ReplaceAll(val, "%NAMESPACE%", routeMatchIR.Parent.Namespace)
+			val = strings.ReplaceAll(val, "%NAME%", routeMatchIR.Parent.Name)
+		}
+		if routeMatchIR.Name != "" {
+			val = strings.ReplaceAll(val, "%RULE_NAME%", routeMatchIR.Name)
+		} else if strings.Contains(val, "%RULE_NAME%") {
+			// The template references %RULE_NAME% but the route rule has no name,
+			// so the token will remain in the resolved stat_prefix string. Log a warning
+			// so operators can diagnose unexpected metric key names in Envoy.
+			logger.Warn("stat_prefix template contains %RULE_NAME% but the route rule has no name; "+
+				"the literal token will appear in the Envoy stat_prefix",
+				"template", spec.statPrefix.rawTemplate,
+				"resolved", val,
+			)
+		}
+		if val != "" {
+			action.StatPrefix = val
+		}
+	}
 }
 
 // handlePerVHostPolicies handles policies that are meant to be processed at the vhost level

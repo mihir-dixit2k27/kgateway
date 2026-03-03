@@ -119,6 +119,8 @@ func (c *TrafficPolicyConstructor) ConstructIR(
 	if err := constructBasicAuth(krtctx, policyCR, &outSpec, c.commoncol.Secrets); err != nil {
 		errors = append(errors, err)
 	}
+	// Construct stat prefix specific IR (stores raw template; substitution at apply-time)
+	constructStatPrefix(policyCR.Spec, &outSpec)
 
 	for _, err := range errors {
 		logger.Error("error translating traffic policy", "namespace", policyCR.GetNamespace(), "name", policyCR.GetName(), "error", err)

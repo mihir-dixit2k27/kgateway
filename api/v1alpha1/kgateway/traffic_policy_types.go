@@ -150,6 +150,19 @@ type TrafficPolicySpec struct {
 	// malicious social engineering.
 	// +optional
 	OAuth2 *OAuth2Policy `json:"oauth2,omitempty"`
+
+	// StatPrefix configures the Envoy route-level stat_prefix, enabling per-route metric namespacing.
+	// When set, Envoy will emit route metrics under a prefix derived from this field, providing a
+	// clear connection between Kubernetes xRoute resources and Envoy metrics.
+	// The value may include template variables that are substituted at translation time:
+	//   - %NAMESPACE%  → the HTTPRoute/GRPCRoute namespace
+	//   - %NAME%       → the HTTPRoute/GRPCRoute name
+	//   - %RULE_NAME%  → the HTTPRoute rule name (only substituted when the rule has a name;
+	//                    if the rule is unnamed, the literal token will appear in the stat_prefix
+	//                    string and a warning will be logged by the controller)
+	// This field is only honored for HTTPRoute and GRPCRoute targets.
+	// +optional
+	StatPrefix *StatPrefixConfig `json:"statPrefix,omitempty"`
 }
 
 // URLRewrite specifies URL rewrite rules using regular expressions.
@@ -607,4 +620,24 @@ type RequestDecompression struct {
 	// Disables decompression.
 	// +optional
 	Disable *shared.PolicyDisable `json:"disable,omitempty"`
+}
+
+// StatPrefixConfig configures the Envoy route-level stat_prefix for per-route metric namespacing.
+type StatPrefixConfig struct {
+	// Value is the stat_prefix string to use for this route.
+	// May contain the following template variables (substituted at translation time):
+	//   - %NAMESPACE%  → replaced with the xRoute namespace
+	//   - %NAME%       → replaced with the xRoute name
+	//   - %RULE_NAME%  → replaced with the HTTPRoute rule name when the rule has a name.
+	//                    If the rule has no name, the literal token %RULE_NAME% will remain
+	//                    in the resulting stat_prefix string (e.g. "default_my-route_%RULE_NAME%")
+	//                    and the controller will log a warning. To avoid this, either name your
+	//                    HTTPRoute rules or avoid using %RULE_NAME% when rules are unnamed.
+	// After template substitution, the resulting string must consist only of
+	// alphanumeric characters and underscores, as required by Envoy's stat naming rules.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_%]+$`
+	Value string `json:"value"`
 }
