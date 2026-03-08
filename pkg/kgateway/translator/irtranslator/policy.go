@@ -119,6 +119,51 @@ func addMergeOriginsToFilterMetadata(
 	return metadata
 }
 
+const routeSourceMetadataKey = "io.kgateway.route_source"
+
+func addRouteSourceMetadata(
+	in ir.HttpRouteRuleMatchIR,
+	metadata *envoycorev3.Metadata,
+) *envoycorev3.Metadata {
+	if in.Parent == nil {
+		return metadata
+	}
+
+	fields := make(map[string]*structpb.Value)
+
+	if in.Parent.Kind != "" {
+		fields["kind"] = structpb.NewStringValue(in.Parent.Kind)
+	}
+	if in.Parent.Group != "" {
+		fields["group"] = structpb.NewStringValue(in.Parent.Group)
+	}
+	if in.Parent.Name != "" {
+		fields["name"] = structpb.NewStringValue(in.Parent.Name)
+	}
+	if in.Parent.Namespace != "" {
+		fields["namespace"] = structpb.NewStringValue(in.Parent.Namespace)
+	}
+	if in.Name != "" {
+		fields["rule"] = structpb.NewStringValue(in.Name)
+	}
+
+	if len(fields) == 0 {
+		return metadata
+	}
+
+	if metadata == nil {
+		metadata = &envoycorev3.Metadata{}
+	}
+	if metadata.FilterMetadata == nil {
+		metadata.FilterMetadata = map[string]*structpb.Struct{}
+	}
+
+	// routeSourceMetadataKey is kgateway-owned and never set by plugins,
+	// so overwriting here is safe and standardizes the output.
+	metadata.FilterMetadata[routeSourceMetadataKey] = &structpb.Struct{Fields: fields}
+	return metadata
+}
+
 // reportRouteConfigPolicyErrors reports policy errors to the appropriate reporter based on attachment level.
 // we can infer the attachment level of the policy based on a combination of PolicyRef.SectionName and the
 // listener's PolicyAncestorRef kind: empty sectionName indicates a gateway-wide policy attachment, non-empty
