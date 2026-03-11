@@ -676,8 +676,9 @@ func (p *trafficPolicyPluginGwPass) handlePerRoutePolicies(
 	routeMatchIR ir.HttpRouteRuleMatchIR,
 	out *envoyroutev3.Route,
 ) {
-	// A parent route rule with a delegated backend will not have RouteAction set
-	if out.GetAction() == nil {
+	// A parent route rule with a delegated backend will not have RouteAction set.
+	// Routes with redirect/direct response also do not have RouteAction.
+	if out.GetRoute() == nil {
 		return
 	}
 
