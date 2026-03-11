@@ -129,23 +129,22 @@ func addRouteSourceMetadata(
 		return metadata
 	}
 
-	fields := make(map[string]*structpb.Value)
+	var fields map[string]*structpb.Value
 
-	if in.Parent.Kind != "" {
-		fields["kind"] = structpb.NewStringValue(in.Parent.Kind)
+	setField := func(key, value string) {
+		if value != "" {
+			if fields == nil {
+				fields = make(map[string]*structpb.Value)
+			}
+			fields[key] = structpb.NewStringValue(value)
+		}
 	}
-	if in.Parent.Group != "" {
-		fields["group"] = structpb.NewStringValue(in.Parent.Group)
-	}
-	if in.Parent.Name != "" {
-		fields["name"] = structpb.NewStringValue(in.Parent.Name)
-	}
-	if in.Parent.Namespace != "" {
-		fields["namespace"] = structpb.NewStringValue(in.Parent.Namespace)
-	}
-	if in.Name != "" {
-		fields["rule"] = structpb.NewStringValue(in.Name)
-	}
+
+	setField("kind", in.Parent.Kind)
+	setField("group", in.Parent.Group)
+	setField("name", in.Parent.Name)
+	setField("namespace", in.Parent.Namespace)
+	setField("rule", in.Name)
 
 	if len(fields) == 0 {
 		return metadata

@@ -6,6 +6,7 @@ import (
 	envoycorev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoyroutev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
@@ -96,9 +97,11 @@ func TestValidateWeightedClusters(t *testing.T) {
 
 func TestAddRouteSourceMetadata(t *testing.T) {
 	tests := []struct {
-		name     string
-		in       ir.HttpRouteRuleMatchIR
-		expected map[string]string
+		name            string
+		in              ir.HttpRouteRuleMatchIR
+		initialMetadata *envoycorev3.Metadata
+		expected        map[string]string
+		expectPreserved bool
 	}{
 		{
 			name: "full metadata",
@@ -155,6 +158,16 @@ func TestAddRouteSourceMetadata(t *testing.T) {
 					},
 				},
 			},
+			initialMetadata: &envoycorev3.Metadata{
+				FilterMetadata: map[string]*structpb.Struct{
+					"existing.key": {
+						Fields: map[string]*structpb.Value{
+							"foo": structpb.NewStringValue("bar"),
+						},
+					},
+				},
+			},
+			expectPreserved: true,
 			expected: map[string]string{
 				"kind": "HTTPRoute",
 				"name": "test-route",
@@ -164,20 +177,7 @@ func TestAddRouteSourceMetadata(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var initialMetadata *envoycorev3.Metadata
-			if tt.name == "existing metadata preserved" {
-				initialMetadata = &envoycorev3.Metadata{
-					FilterMetadata: map[string]*structpb.Struct{
-						"existing.key": {
-							Fields: map[string]*structpb.Value{
-								"foo": structpb.NewStringValue("bar"),
-							},
-						},
-					},
-				}
-			}
-
-			metadata := addRouteSourceMetadata(tt.in, initialMetadata)
+			metadata := addRouteSourceMetadata(tt.in, tt.initialMetadata)
 
 			if tt.expected == nil {
 				if metadata != nil && metadata.FilterMetadata != nil {
@@ -187,11 +187,11 @@ func TestAddRouteSourceMetadata(t *testing.T) {
 				return
 			}
 
-			assert.NotNil(t, metadata)
-			assert.NotNil(t, metadata.FilterMetadata)
+			require.NotNil(t, metadata, "metadata should not be nil")
+			require.NotNil(t, metadata.FilterMetadata, "filter metadata should not be nil")
 
 			structPb, ok := metadata.FilterMetadata[routeSourceMetadataKey]
-			assert.True(t, ok, "expected route source metadata key")
+			require.True(t, ok, "expected route source metadata key %q", routeSourceMetadataKey)
 
 			fields := structPb.Fields
 			assert.Equal(t, len(tt.expected), len(fields), "unexpected number of fields")
@@ -202,9 +202,9 @@ func TestAddRouteSourceMetadata(t *testing.T) {
 				assert.Equal(t, v, val.GetStringValue(), "value mismatch for key: %s", k)
 			}
 
-			if tt.name == "existing metadata preserved" {
+			if tt.expectPreserved {
 				existingPb, ok := metadata.FilterMetadata["existing.key"]
-				assert.True(t, ok, "expected existing metadata key to be preserved")
+				require.True(t, ok, "expected existing metadata key to be preserved")
 				assert.Equal(t, "bar", existingPb.Fields["foo"].GetStringValue(), "existing metadata value mismatch")
 			}
 		})
