@@ -228,9 +228,7 @@ func (h *httpRouteConfigurationTranslator) envoyRoutes(
 ) *envoyroutev3.Route {
 	out := h.initRoutes(in, generatedName)
 
-	if in.Parent != nil {
-		out.Metadata = addRouteSourceMetadata(in, out.GetMetadata())
-	}
+	out.Metadata = addRouteSourceMetadata(in, out.GetMetadata())
 
 	backendConfigCtx := backendConfigContext{typedPerFilterConfigRoute: ir.TypedFilterConfigMap(map[string]proto.Message{})}
 	if len(in.Backends) == 1 {
