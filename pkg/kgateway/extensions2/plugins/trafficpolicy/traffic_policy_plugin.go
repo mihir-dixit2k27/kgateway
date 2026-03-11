@@ -2,6 +2,7 @@ package trafficpolicy
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -722,17 +723,14 @@ func (p *trafficPolicyPluginGwPass) handlePerRoutePolicies(
 			val = strings.ReplaceAll(val, "%NAMESPACE%", routeMatchIR.Parent.Namespace)
 			val = strings.ReplaceAll(val, "%NAME%", routeMatchIR.Parent.Name)
 		}
-		if routeMatchIR.Name != "" {
-			val = strings.ReplaceAll(val, "%RULE_NAME%", routeMatchIR.Name)
-		} else if strings.Contains(val, "%RULE_NAME%") {
-			// The template references %RULE_NAME% but the route rule has no name,
-			// so the token will remain in the resolved stat_prefix string. Log a warning
-			// so operators can diagnose unexpected metric key names in Envoy.
-			logger.Warn("stat_prefix template contains %RULE_NAME% but the route rule has no name; "+
-				"the literal token will appear in the Envoy stat_prefix",
-				"template", spec.statPrefix.rawTemplate,
-				"resolved", val,
-			)
+		if strings.Contains(val, "%RULE_NAME%") {
+			ruleNameFallback := routeMatchIR.RuleName
+			if ruleNameFallback == "" {
+				// Envoy sanitizes arbitrary characters, giving users random underscores if they omit names.
+				// Fallback to the deterministic rule index instead of leaving the literal token.
+				ruleNameFallback = strconv.Itoa(routeMatchIR.RuleIndex)
+			}
+			val = strings.ReplaceAll(val, "%RULE_NAME%", ruleNameFallback)
 		}
 		if val != "" {
 			action.StatPrefix = val

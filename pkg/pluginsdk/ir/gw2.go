@@ -37,6 +37,8 @@ type HttpRouteRuleMatchIR struct {
 	Backends   []HttpBackend
 	Match      gwv1.HTTPRouteMatch
 	MatchIndex int
+	RuleIndex  int
+	RuleName   string
 	Name       string
 
 	// PrecedenceWeight specifies the weight of this route rule relative to other route rules.

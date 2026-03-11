@@ -168,8 +168,10 @@ func makeRouteMatchIR(namespace, name, ruleName string) ir.HttpRouteRuleMatchIR 
 	parent.Namespace = namespace
 	parent.Name = name
 	return ir.HttpRouteRuleMatchIR{
-		Parent: parent,
-		Name:   ruleName,
+		Parent:    parent,
+		Name:      "envoy-generated-name",
+		RuleName:  ruleName,
+		RuleIndex: 42,
 	}
 }
 
@@ -383,16 +385,16 @@ func TestApplyForRoute_RuleNameSubstitution_OnlyWhenSet(t *testing.T) {
 		pCtx := &ir.RouteContext{
 			Policy: policy,
 			In: ir.HttpRouteRuleMatchIR{
-				Parent: &ir.HttpRouteIR{},
-				Name:   "", // no name — token stays, controller logs a warning
+				Parent:    &ir.HttpRouteIR{},
+				RuleName:  "", // no name — fallback to RuleIndex
+				RuleIndex: 5,
 			},
 		}
 		out := makeRouteWithAction()
 		require.NoError(t, plugin.ApplyForRoute(pCtx, out))
-		// %RULE_NAME% is NOT replaced because Name is empty.
-		// The literal token stays in the string and a warning is logged by the controller.
-		// Operators should either name their HTTPRoute rules or avoid %RULE_NAME% for unnamed rules.
-		assert.Equal(t, "svc_%RULE_NAME%", out.GetRoute().StatPrefix,
-			"unresolved token should remain in the stat_prefix string (operator must check logs for warning)")
+		
+		// %RULE_NAME% is replaced by the deterministic rule index because RuleName is empty.
+		assert.Equal(t, "svc_5", out.GetRoute().StatPrefix,
+			"unresolved token should be replaced by the deterministic rule index fallback")
 	})
 }
