@@ -1,0 +1,25 @@
+listeners:
+- name: http
+  address:
+    socketAddress:
+      address: 0.0.0.0
+      portValue: 8080
+  filterChains:
+  - filters:
+    - name: envoy.filters.network.http_connection_manager
+      typedConfig:
+        '@type': type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+        statPrefix: http
+        routeConfig:
+          name: http
+          virtualHosts:
+          - name: default_example-gateway
+            domains:
+            - '*'
+            routes:
+            - match:
+                prefix: /
+              route:
+                cluster: default_example-svc_8080
+              statPrefix: custom_default_example-route_my-rule
+              name: example-route

@@ -155,9 +155,9 @@ type TrafficPolicySpec struct {
 	// When set, Envoy will emit route metrics under a prefix derived from this field, providing a
 	// clear connection between Kubernetes xRoute resources and Envoy metrics.
 	// The value may include template variables that are substituted at translation time:
-	//   - %NAMESPACE%  → the HTTPRoute/GRPCRoute namespace
-	//   - %NAME%       → the HTTPRoute/GRPCRoute name
-	//   - %RULE_NAME%  → the HTTPRoute rule name (only substituted when the rule has a name;
+	//   - %NAMESPACE%  -> the HTTPRoute/GRPCRoute namespace
+	//   - %NAME%       -> the HTTPRoute/GRPCRoute name
+	//   - %RULE_NAME%  -> the HTTPRoute rule name (only substituted when the rule has a name;
 	//                    if the rule is unnamed, the literal token will appear in the stat_prefix
 	//                    string and a warning will be logged by the controller)
 	// This field is only honored for HTTPRoute and GRPCRoute targets.
@@ -626,9 +626,9 @@ type RequestDecompression struct {
 type StatPrefixConfig struct {
 	// Value is the stat_prefix string to use for this route.
 	// May contain the following template variables (substituted at translation time):
-	//   - %NAMESPACE%  → replaced with the xRoute namespace
-	//   - %NAME%       → replaced with the xRoute name
-	//   - %RULE_NAME%  → replaced with the HTTPRoute rule name when the rule has a name.
+	//   - %NAMESPACE%  -> replaced with the xRoute namespace
+	//   - %NAME%       -> replaced with the xRoute name
+	//   - %RULE_NAME%  -> replaced with the HTTPRoute rule name when the rule has a name.
 	//                    If the rule has no name, the literal token %RULE_NAME% will remain
 	//                    in the resulting stat_prefix string (e.g. "default_my-route_%RULE_NAME%")
 	//                    and the controller will log a warning. To avoid this, either name your
@@ -642,9 +642,7 @@ type StatPrefixConfig struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=256
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_%-]+$`
-<<<<<<< HEAD
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_%-]+$`
-=======
->>>>>>> 0efdf836b6 (fix(trafficpolicy): update stat_prefix validation pattern to allow hyphens)
+	// +kubebuilder:validation:XValidation:rule="self.replace('%NAMESPACE%', '').replace('%NAME%', '').replace('%RULE_NAME%', '').indexOf('%') == -1",message="percent signs (%) are only allowed as part of valid template variables (%NAMESPACE%, %NAME%, %RULE_NAME%)"
 	Value string `json:"value"`
 }

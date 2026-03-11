@@ -1,0 +1,67 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: kgateway
+spec:
+  controllerName: kgateway.dev/kgateway
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: example-gateway
+  namespace: default
+spec:
+  gatewayClassName: kgateway
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 8080
+    allowedRoutes:
+      namespaces:
+        from: All
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: example-route
+  namespace: default
+spec:
+  parentRefs:
+  - name: example-gateway
+  rules:
+  - name: my-rule
+    matches:
+    - path:
+        type: PathPrefix
+        value: "/"
+    backendRefs:
+    - name: example-svc
+      port: 8080
+---
+apiVersion: kgateway.io/v1alpha1
+kind: TrafficPolicy
+metadata:
+  name: example-policy
+  namespace: default
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: example-route
+  statPrefix:
+    value: "custom_%NAMESPACE%_%NAME%_%RULE_NAME%"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-svc
+  namespace: default
+  labels:
+    app: example
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app: example

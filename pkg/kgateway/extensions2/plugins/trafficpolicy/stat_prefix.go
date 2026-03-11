@@ -33,7 +33,12 @@ func (s *statPrefixIR) Equals(other PolicySubIR) bool {
 // Validate performs validation on the stat prefix IR. Validation of the template
 // value format is handled at admission time by the kubebuilder validation markers
 // on StatPrefixConfig.Value, so no further validation is needed here.
-func (s *statPrefixIR) Validate() error { return nil }
+func (s *statPrefixIR) Validate() error {
+	if s == nil {
+		return nil
+	}
+	return nil
+}
 
 // constructStatPrefix builds the statPrefixIR from the policy CR, storing the
 // raw template string without any substitution. Template variables are resolved
