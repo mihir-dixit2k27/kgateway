@@ -1,0 +1,83 @@
+name: Inference Routing Benchmarks
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly on Monday at 02:00 UTC
+  push:
+    branches: [main]
+    paths:
+      - 'pkg/kgateway/extensions2/plugins/**'
+      - 'test/e2e/features/inferencebench/**'
+
+env:
+  VERSION: 'v1.0.0-ci1'
+  GITHUB_TOKEN: ${{ github.token }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  inference_bench:
+    name: Inference Routing Benchmarks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prep Go Runner
+        uses: ./.github/actions/prep-go-runner
+
+      - name: Dotenv Action
+        uses: falti/dotenv-action@v1.1.4
+        id: dotenv
+        with:
+          path: ./.github/workflows/.env/pr-tests/versions.env
+          log-variables: true
+
+      - id: setup-kind-cluster
+        name: Setup KinD Cluster
+        uses: ./.github/actions/setup-kind-cluster
+        with:
+          cluster-name: bench-cluster
+          kind-node-version: ${{ steps.dotenv.outputs.node_version }}
+          kubectl-version: ${{ steps.dotenv.outputs.kubectl_version }}
+          istio-version: ${{ steps.dotenv.outputs.istio_version }}
+
+      - name: Run inference benchmarks
+        shell: bash
+        env:
+          CLUSTER_NAME: bench-cluster
+          INSTALL_NAMESPACE: kgateway-bench
+        run: |
+          go test -tags e2e -timeout 30m \
+            -run '^TestInferenceBench$$' \
+            ./test/e2e/tests/... \
+            -v 2>&1 | tee _output/bench-results.txt
+
+      - name: Generate report
+        if: always()
+        shell: bash
+        run: |
+          if [ -f _output/bench-results.json ]; then
+            go run ./hack/benchreport/main.go _output/bench-results.json | tee _output/bench-report.md
+          else
+            echo "No bench-results.json found, skipping report"
+          fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results-${{ github.sha }}
+          path: |
+            _output/bench-results.*
+            _output/bench-report.md
+
+      - name: Debug disk space
+        if: always()
+        shell: bash
+        run: |
+          echo "After job disk space:"
+          df -h
