@@ -873,6 +873,15 @@ run-load-tests-production: ## Run production load tests (5000 routes)
 	SKIP_INSTALL=true CLUSTER_NAME=$(CLUSTER_NAME) INSTALL_NAMESPACE=$(INSTALL_NAMESPACE) \
 	go test -tags=e2e -v ./test/e2e/tests -run "^TestKgateway$$/^AttachedRoutes$$/^TestAttachedRoutesProduction$$"
 
+.PHONY: run-inference-bench
+run-inference-bench: ## Run inference routing benchmark suite (requires existing cluster and installation)
+	SKIP_INSTALL=true CLUSTER_NAME=$(CLUSTER_NAME) INSTALL_NAMESPACE=$(INSTALL_NAMESPACE) \
+	go test -tags=bench -timeout 35m -v ./test/e2e/tests -run "^TestInferenceBench$$" 2>&1 | tee _output/bench-results.txt
+
+.PHONY: bench-report
+bench-report: ## Generate markdown report from benchmark JSON output
+	go run ./hack/benchreport/main.go _output/bench-results.json | tee _output/bench-report.md
+
 #----------------------------------------------------------------------------------
 # MARK: Conformance
 # Targets for running Kubernetes Gateway API conformance tests
