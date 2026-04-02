@@ -119,7 +119,7 @@ func addMergeOriginsToFilterMetadata(
 	return metadata
 }
 
-const routeSourceMetadataKey = "io.kgateway.route_source"
+const routeSourceMetadataKey = "dev.kgateway.route_source"
 
 func addRouteSourceMetadata(
 	in ir.HttpRouteRuleMatchIR,
