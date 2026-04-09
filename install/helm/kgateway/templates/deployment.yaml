@@ -113,6 +113,8 @@ spec:
               value: {{ .Values.policyMerge | toJson | quote }}
             - name: KGW_VALIDATION_MODE
               value: {{ include "kgateway.validationLevel" . | quote }}
+            - name: KGW_ROUTE_SOURCE_METADATA_ENABLED
+              value: {{ .Values.routeSourceMetadataEnabled | quote }}
             {{- if .Values.controller.extraEnv }}
             {{- range $key, $value := .Values.controller.extraEnv }}
             - name: {{ $key }}
