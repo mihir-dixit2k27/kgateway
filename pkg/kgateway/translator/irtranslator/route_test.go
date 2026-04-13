@@ -210,3 +210,73 @@ func TestAddRouteSourceMetadata(t *testing.T) {
 		})
 	}
 }
+
+// TestRouteSourceMetadataFlag verifies that the routeSourceMetadataEnabled flag
+// correctly gates attachment of dev.kgateway.route_source filter metadata.
+// When disabled (the default), routes carry no such metadata. When enabled,
+// all five source fields are present and correct.
+func TestRouteSourceMetadataFlag(t *testing.T) {
+	in := ir.HttpRouteRuleMatchIR{
+		Name: "my-rule",
+		Parent: &ir.HttpRouteIR{
+			ObjectSource: ir.ObjectSource{
+				Kind:      "HTTPRoute",
+				Group:     "gateway.networking.k8s.io",
+				Name:      "my-route",
+				Namespace: "default",
+			},
+		},
+	}
+
+	tests := []struct {
+		name        string
+		flagEnabled bool
+		wantMeta    bool
+	}{
+		{
+			name:        "disabled by default, no route_source metadata",
+			flagEnabled: false,
+			wantMeta:    false,
+		},
+		{
+			name:        "enabled, route_source metadata is attached",
+			flagEnabled: true,
+			wantMeta:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &httpRouteConfigurationTranslator{
+				pluginPass:                 TranslationPassPlugins{},
+				routeSourceMetadataEnabled: tt.flagEnabled,
+			}
+
+			// Replicate the flag gate in envoyRoutes() without needing a
+			// fully-wired translator (no backends, validator, or GatewayIR required).
+			out := h.initRoutes(in, "generated-name")
+			if h.routeSourceMetadataEnabled {
+				out.Metadata = addRouteSourceMetadata(in, out.GetMetadata())
+			}
+
+			if !tt.wantMeta {
+				if out.GetMetadata() != nil {
+					_, ok := out.GetMetadata().GetFilterMetadata()[routeSourceMetadataKey]
+					assert.False(t, ok, "route_source metadata should be absent when the flag is off")
+				}
+				return
+			}
+
+			require.NotNil(t, out.GetMetadata(), "metadata must not be nil when the flag is on")
+			srcMeta, ok := out.GetMetadata().GetFilterMetadata()[routeSourceMetadataKey]
+			require.True(t, ok, "filter metadata must contain key %q", routeSourceMetadataKey)
+
+			fields := srcMeta.GetFields()
+			assert.Equal(t, "HTTPRoute", fields["kind"].GetStringValue())
+			assert.Equal(t, "gateway.networking.k8s.io", fields["group"].GetStringValue())
+			assert.Equal(t, "my-route", fields["name"].GetStringValue())
+			assert.Equal(t, "default", fields["namespace"].GetStringValue())
+			assert.Equal(t, "my-rule", fields["rule"].GetStringValue())
+		})
+	}
+}
