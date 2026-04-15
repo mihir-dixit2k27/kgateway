@@ -292,3 +292,125 @@ func TestGetServiceValues(t *testing.T) {
 		})
 	}
 }
+
+// TestAppendPortValue covers the nodePort propagation logic in AppendPortValue.
+func TestAppendPortValue(t *testing.T) {
+	makeGWP := func(svcType corev1.ServiceType, ports []kgateway.Port) *kgateway.GatewayParameters {
+		return &kgateway.GatewayParameters{
+			Spec: kgateway.GatewayParametersSpec{
+				Kube: &kgateway.KubernetesProxyConfig{
+					Service: &kgateway.Service{
+						Type:  &svcType,
+						Ports: ports,
+					},
+				},
+			},
+		}
+	}
+
+	np := func(v int32) *int32 { return &v }
+
+	tests := []struct {
+		name         string
+		gwp          *kgateway.GatewayParameters
+		port         int32
+		wantNodePort *int32 // nil means Kubernetes should assign randomly
+	}{
+		{
+			name:         "LoadBalancer with explicit nodePort is preserved",
+			gwp:          makeGWP(corev1.ServiceTypeLoadBalancer, []kgateway.Port{{Port: 443, NodePort: np(35000)}}),
+			port:         443,
+			wantNodePort: np(35000),
+		},
+		{
+			name:         "NodePort with explicit nodePort is preserved",
+			gwp:          makeGWP(corev1.ServiceTypeNodePort, []kgateway.Port{{Port: 80, NodePort: np(30080)}}),
+			port:         80,
+			wantNodePort: np(30080),
+		},
+		{
+			name:         "LoadBalancer with nodePort=0 lets Kubernetes assign randomly",
+			gwp:          makeGWP(corev1.ServiceTypeLoadBalancer, []kgateway.Port{{Port: 443, NodePort: np(0)}}),
+			port:         443,
+			wantNodePort: nil,
+		},
+		{
+			name:         "LoadBalancer with no nodePort entry lets Kubernetes assign randomly",
+			gwp:          makeGWP(corev1.ServiceTypeLoadBalancer, []kgateway.Port{{Port: 443}}),
+			port:         443,
+			wantNodePort: nil,
+		},
+		{
+			name:         "ClusterIP ignores nodePort even if configured",
+			gwp:          makeGWP(corev1.ServiceTypeClusterIP, []kgateway.Port{{Port: 80, NodePort: np(31000)}}),
+			port:         80,
+			wantNodePort: nil,
+		},
+		{
+			name:         "ExternalName ignores nodePort",
+			gwp:          makeGWP(corev1.ServiceTypeExternalName, []kgateway.Port{{Port: 80, NodePort: np(31000)}}),
+			port:         80,
+			wantNodePort: nil,
+		},
+		{
+			name:         "port not in GatewayParameters list yields nil nodePort",
+			gwp:          makeGWP(corev1.ServiceTypeLoadBalancer, []kgateway.Port{{Port: 8080, NodePort: np(32000)}}),
+			port:         443, // 443 is not in the list
+			wantNodePort: nil,
+		},
+		{
+			name:         "nil GatewayParameters yields nil nodePort",
+			gwp:          nil,
+			port:         443,
+			wantNodePort: nil,
+		},
+		{
+			name: "nil service type yields nil nodePort",
+			gwp: &kgateway.GatewayParameters{
+				Spec: kgateway.GatewayParametersSpec{
+					Kube: &kgateway.KubernetesProxyConfig{
+						Service: &kgateway.Service{
+							Type:  nil,
+							Ports: []kgateway.Port{{Port: 443, NodePort: np(35000)}},
+						},
+					},
+				},
+			},
+			port:         443,
+			wantNodePort: nil,
+		},
+		{
+			name: "multiple ports — port 443 resolved correctly for LoadBalancer",
+			gwp: makeGWP(corev1.ServiceTypeLoadBalancer, []kgateway.Port{
+				{Port: 80, NodePort: np(30080)},
+				{Port: 443, NodePort: np(30443)},
+			}),
+			port:         443,
+			wantNodePort: np(30443),
+		},
+		{
+			name: "multiple ports — port 80 resolved correctly for LoadBalancer",
+			gwp: makeGWP(corev1.ServiceTypeLoadBalancer, []kgateway.Port{
+				{Port: 80, NodePort: np(30080)},
+				{Port: 443, NodePort: np(30443)},
+			}),
+			port:         80,
+			wantNodePort: np(30080),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := AppendPortValue([]HelmPort{}, tt.port, "test-port", tt.gwp)
+			if assert.Len(t, got, 1, "expected exactly one port appended") {
+				if tt.wantNodePort == nil {
+					assert.Nil(t, got[0].NodePort, "expected nil NodePort (Kubernetes assigns randomly)")
+				} else {
+					if assert.NotNil(t, got[0].NodePort, "expected non-nil NodePort") {
+						assert.Equal(t, *tt.wantNodePort, *got[0].NodePort, "NodePort value mismatch")
+					}
+				}
+			}
+		})
+	}
+}
