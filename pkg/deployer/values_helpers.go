@@ -97,17 +97,12 @@ func AppendPortValue(gwPorts []HelmPort, port int32, name string, gwp *kgateway.
 	// NodePort and LoadBalancer both support explicit node ports; if not set, nil renders nothing.
 	var nodePort *int32 = nil
 	if gwp != nil && gwp.Spec.GetKube().GetService().GetType() != nil {
-		svcType := *(gwp.Spec.GetKube().GetService().GetType())
-		if svcType == corev1.ServiceTypeNodePort || svcType == corev1.ServiceTypeLoadBalancer {
+		serviceType := *(gwp.Spec.GetKube().GetService().GetType())
+		if serviceType == corev1.ServiceTypeNodePort || serviceType == corev1.ServiceTypeLoadBalancer {
 			if idx := slices.IndexFunc(gwp.Spec.GetKube().GetService().GetPorts(), func(p kgateway.Port) bool {
 				return p.GetPort() == port
 			}); idx != -1 {
-				np := gwp.Spec.GetKube().GetService().GetPorts()[idx].GetNodePort()
-				// Only set the nodePort if explicitly provided. A zero value is ignored
-				// to allow Kubernetes to assign it dynamically.
-				if np != nil && *np != 0 {
-					nodePort = np
-				}
+				nodePort = gwp.Spec.GetKube().GetService().GetPorts()[idx].GetNodePort()
 			}
 		}
 	}
