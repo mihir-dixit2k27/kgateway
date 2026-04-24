@@ -39,6 +39,7 @@ func MergeHttpPolicies(
 		mergeDefaultHostForHttp10,
 		mergeEarlyHeaderMutation,
 		mergeMaxRequestHeadersKb,
+		mergeMaxRequestsPerConnection,
 		mergeUuidRequestIdConfig,
 	}
 	for _, mergeFunc := range mergeFuncs {
@@ -357,4 +358,20 @@ func mergeUuidRequestIdConfig(
 
 	p1.uuidRequestIdConfig = p2.uuidRequestIdConfig
 	mergeOrigins.SetOne(origin+"uuidRequestIdConfig", p2Ref, p2MergeOrigins)
+}
+
+func mergeMaxRequestsPerConnection(
+	origin string,
+	p1, p2 *HttpListenerPolicyIr,
+	p2Ref *ir.AttachedPolicyRef,
+	p2MergeOrigins ir.MergeOrigins,
+	opts policy.MergeOptions,
+	mergeOrigins ir.MergeOrigins,
+) {
+	if !policy.IsMergeable(p1.maxRequestsPerConnection, p2.maxRequestsPerConnection, opts) {
+		return
+	}
+
+	p1.maxRequestsPerConnection = p2.maxRequestsPerConnection
+	mergeOrigins.SetOne(origin+"maxRequestsPerConnection", p2Ref, p2MergeOrigins)
 }
