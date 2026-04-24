@@ -269,8 +269,8 @@ func NewHttpListenerPolicy(krtctx krt.HandlerContext, commoncol *collections.Com
 	}
 
 	var maxRequestsPerConnection *uint32
-	if h.MaxRequestsPerConnection != nil {
-		maxRequestsPerConnection = new(uint32(*h.MaxRequestsPerConnection)) // nolint:gosec // G115: kubebuilder validation ensures 0 <= value <= int32 max, safe for uint32
+	if h.MaxRequestsPerConnection != nil && *h.MaxRequestsPerConnection > 0 {
+		maxRequestsPerConnection = new(uint32(*h.MaxRequestsPerConnection)) // nolint:gosec // G115: kubebuilder validation ensures safe for uint32
 	}
 
 	var uuidRequestIdConfig *envoyuuidv3.UuidRequestIdConfig

@@ -449,8 +449,8 @@ func (p *listenerPolicyPluginGwPass) ApplyHCM(
 		out.GetCommonHttpProtocolOptions().IdleTimeout = durationpb.New(*policy.idleTimeout)
 	}
 
-	// translate maxRequestsPerConnection; value 0 means unlimited so skip it, Envoy treats absent the same way
-	if policy.maxRequestsPerConnection != nil && *policy.maxRequestsPerConnection > 0 {
+	// translate maxRequestsPerConnection
+	if policy.maxRequestsPerConnection != nil {
 		if out.CommonHttpProtocolOptions == nil {
 			out.CommonHttpProtocolOptions = &envoycorev3.HttpProtocolOptions{}
 		}

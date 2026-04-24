@@ -36,19 +36,9 @@ Listeners:
         statPrefix: http
         useRemoteAddress: true
     name: listener~80
-  metadata:
-    filterMetadata:
-      merge.ListenerPolicy.gateway.kgateway.dev:
-        default.httpSettings.maxRequestsPerConnection:
-        - gateway.kgateway.dev/ListenerPolicy/default/max-requests-per-connection-zero
   name: listener~80
 Routes:
 - ignorePortInHostMatching: true
-  metadata:
-    filterMetadata:
-      merge.ListenerPolicy.gateway.kgateway.dev:
-        default.httpSettings.maxRequestsPerConnection:
-        - gateway.kgateway.dev/ListenerPolicy/default/max-requests-per-connection-zero
   name: listener~80
   virtualHosts:
   - domains:
