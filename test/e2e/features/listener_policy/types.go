@@ -23,6 +23,8 @@ var (
 	httpListenerPolicyMissingTargetManifest = filepath.Join(fsutils.MustGetThisDir(), "testdata", "listener-policy-missing-target.yaml")
 	earlyHeaderMutationManifest             = filepath.Join(fsutils.MustGetThisDir(), "testdata", "listener-policy-early-header-route-match.yaml")
 	proxyProtocolManifest                   = filepath.Join(fsutils.MustGetThisDir(), "testdata", "listener-policy-proxy-protocol.yaml")
+	maxRequestsPerConnectionManifest        = filepath.Join(fsutils.MustGetThisDir(), "testdata", "listener-policy-max-requests-per-connection.yaml")
+
 	// RequestID test manifests for testing the new RequestID configuration feature
 	listenerPolicyRequestIdManifest     = filepath.Join(fsutils.MustGetThisDir(), "testdata", "listener-policy-request-id.yaml")
 	requestIdEchoManifest               = filepath.Join(fsutils.MustGetThisDir(), "testdata", "request-id-echo.yaml")

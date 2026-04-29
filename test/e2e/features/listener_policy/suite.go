@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"time"
 
+	envoy_hcm "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	"github.com/onsi/gomega"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"google.golang.org/protobuf/proto"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1/kgateway"
@@ -22,6 +24,7 @@ import (
 	"github.com/kgateway-dev/kgateway/v2/pkg/utils/requestutils/curl"
 	"github.com/kgateway-dev/kgateway/v2/test/e2e"
 	testdefaults "github.com/kgateway-dev/kgateway/v2/test/e2e/defaults"
+	"github.com/kgateway-dev/kgateway/v2/test/envoyutils/admincli"
 	"github.com/kgateway-dev/kgateway/v2/test/gomega/matchers"
 	"github.com/kgateway-dev/kgateway/v2/test/helpers"
 	"github.com/kgateway-dev/kgateway/v2/test/testutils"
@@ -71,6 +74,7 @@ func (s *testingSuite) SetupSuite() {
 		// These tests use an echo server to verify x-request-id header behavior
 		"TestListenerPolicyRequestId":     {gatewayManifest, requestIdEchoManifest, listenerPolicyRequestIdManifest},
 		"TestHTTPListenerPolicyRequestId": {gatewayManifest, requestIdEchoManifest, httpListenerPolicyRequestIdManifest},
+		"TestListenerPolicyMaxRequestsPerConnection": {gatewayManifest, httpRouteManifest, maxRequestsPerConnectionManifest},
 	}
 }
 
@@ -438,4 +442,54 @@ func (s *testingSuite) TestHTTPListenerPolicyRequestId() {
 			// Verify x-request-id header was generated with valid UUID format
 			Body: gomega.MatchRegexp(`(?i)x-request-id: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`),
 		})
+}
+
+// TestListenerPolicyMaxRequestsPerConnection checks that setting maxRequestsPerConnection
+// in a ListenerPolicy lands in Envoy's HCM config and doesn't break traffic.
+func (s *testingSuite) TestListenerPolicyMaxRequestsPerConnection() {
+	// A NACK from Envoy would surface here as a connection error, so this also serves as an acceptance check.
+	s.testInstallation.AssertionsT(s.T()).AssertEventualCurlResponse(
+		s.ctx,
+		testdefaults.CurlPodExecOpt,
+		[]curl.Option{
+			curl.WithHost(kubeutils.ServiceFQDN(proxyService.ObjectMeta)),
+			curl.WithHostHeader("example.com"),
+		},
+		&matchers.HttpResponse{
+			StatusCode: http.StatusOK,
+			Body:       gomega.ContainSubstring("Welcome to nginx!"),
+		},
+	)
+
+	// Verify the setting appears in the Envoy config dump via the admin API.
+	s.testInstallation.AssertionsT(s.T()).AssertEnvoyAdminApi(
+		s.ctx,
+		proxyDeployment.ObjectMeta,
+		func(ctx context.Context, adminClient *admincli.Client) {
+			s.testInstallation.AssertionsT(s.T()).Gomega.Eventually(func(g gomega.Gomega) {
+				listener, err := adminClient.GetSingleListenerFromDynamicListeners(ctx, "listener~8080")
+				g.Expect(err).NotTo(gomega.HaveOccurred(), "failed to get dynamic listener from config dump")
+				g.Expect(listener.GetFilterChains()).NotTo(gomega.BeEmpty(), "listener should have at least one filter chain")
+
+				// First filter chain, first network filter is always the HCM.
+				filterChain := listener.GetFilterChains()[0]
+				g.Expect(filterChain.GetFilters()).NotTo(gomega.BeEmpty(), "filter chain should have at least one network filter")
+
+				hcm := &envoy_hcm.HttpConnectionManager{}
+				g.Expect(proto.Unmarshal(filterChain.GetFilters()[0].GetTypedConfig().GetValue(), hcm)).
+					To(gomega.Succeed(), "failed to unmarshal HCM from network filter")
+
+				// Assert the exact value, not just presence — a wiring bug can leave the field at 0.
+				g.Expect(hcm.GetCommonHttpProtocolOptions()).NotTo(gomega.BeNil(),
+					"common_http_protocol_options should be present")
+				g.Expect(hcm.GetCommonHttpProtocolOptions().GetMaxRequestsPerConnection().GetValue()).
+					To(gomega.Equal(uint32(100)),
+						"max_requests_per_connection should be 100 as set in the ListenerPolicy")
+			}).
+				WithContext(ctx).
+				WithTimeout(30 * time.Second).
+				WithPolling(2 * time.Second).
+				Should(gomega.Succeed())
+		},
+	)
 }
