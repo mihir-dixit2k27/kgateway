@@ -8,6 +8,7 @@ import (
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	"github.com/kgateway-dev/kgateway/v2/api/v1alpha1/shared"
+	backendtlspolicyplugin "github.com/kgateway-dev/kgateway/v2/pkg/kgateway/extensions2/plugins/backendtlspolicy"
 	"github.com/kgateway-dev/kgateway/v2/pkg/kgateway/wellknown"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/ir"
 	"github.com/kgateway-dev/kgateway/v2/pkg/pluginsdk/reporter"
@@ -119,48 +120,52 @@ func addMergeOriginsToFilterMetadata(
 	return metadata
 }
 
-const routeSourceMetadataKey = "dev.kgateway.route_source"
-
-func addRouteSourceMetadata(
-	in ir.HttpRouteRuleMatchIR,
-	metadata *envoycorev3.Metadata,
-) *envoycorev3.Metadata {
-	if in.Parent == nil {
-		return metadata
+func reportBackendObjectPolicyStatus(
+	rp reporter.Reporter,
+	ancestorRef gwv1.ParentReference,
+	pluginPass TranslationPassPlugins,
+	backend *ir.BackendObjectIR,
+) {
+	// TODO(#13908): Wire this helper into the shared TCP/TLS filter-chain path so
+	// terminated TLSRoute backends report BackendTLSPolicy Gateway ancestors too.
+	if backend == nil {
+		return
 	}
 
-	var fields map[string]*structpb.Value
+	gk := wellknown.BackendTLSPolicyGVK.GroupKind()
+	policies := backend.AttachedPolicies.Policies[gk]
+	if len(policies) == 0 {
+		return
+	}
 
-	setField := func(key, value string) {
-		if value != "" {
-			if fields == nil {
-				fields = make(map[string]*structpb.Value)
-			}
-			fields[key] = structpb.NewStringValue(value)
+	var effectivePolicy *ir.PolicyAtt
+	if pass := pluginPass[gk]; pass != nil {
+		effectivePolicies, _ := mergePolicies(pass, policies)
+		if len(effectivePolicies) > 0 {
+			effectivePolicy = &effectivePolicies[0]
 		}
 	}
-
-	setField("kind", in.Parent.Kind)
-	setField("group", in.Parent.Group)
-	setField("name", in.Parent.Name)
-	setField("namespace", in.Parent.Namespace)
-	setField("rule", in.Name)
-
-	if len(fields) == 0 {
-		return metadata
+	if effectivePolicy == nil {
+		effectivePolicy = &policies[0]
 	}
 
-	if metadata == nil {
-		metadata = &envoycorev3.Metadata{}
-	}
-	if metadata.FilterMetadata == nil {
-		metadata.FilterMetadata = map[string]*structpb.Struct{}
-	}
+	for _, policy := range policies {
+		if policy.PolicyRef == nil {
+			continue
+		}
 
-	// routeSourceMetadataKey is kgateway-owned and never set by plugins,
-	// so overwriting here is safe and standardizes the output.
-	metadata.FilterMetadata[routeSourceMetadataKey] = &structpb.Struct{Fields: fields}
-	return metadata
+		key := reporter.PolicyKey{
+			Group:     policy.PolicyRef.Group,
+			Kind:      policy.PolicyRef.Kind,
+			Namespace: policy.PolicyRef.Namespace,
+			Name:      policy.PolicyRef.Name,
+		}
+
+		ancestorReporter := rp.Policy(key, policy.Generation).AncestorRef(ancestorRef)
+		for _, condition := range backendtlspolicyplugin.BuildPolicyConditions(policy, effectivePolicy) {
+			ancestorReporter.SetCondition(condition)
+		}
+	}
 }
 
 // reportRouteConfigPolicyErrors reports policy errors to the appropriate reporter based on attachment level.

@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.1-0.20251023132335-bf7d6b742e6a
+    controller-gen.kubebuilder.io/version: v0.20.1
   labels:
     app: kgateway
     app.kubernetes.io/name: kgateway
@@ -361,6 +361,51 @@ spec:
                                         required:
                                         - flags
                                         type: object
+                                      runtimeFilter:
+                                        description: |-
+                                          Filters for random sampling of access logs.
+                                          Based on: https://www.envoyproxy.io/docs/envoy/v1.33.0/api-v3/config/accesslog/v3/accesslog.proto#config-accesslog-v3-runtimefilter
+                                        properties:
+                                          percentSampled:
+                                            description: |-
+                                              By default, the runtime filter will log on every request when the runtime key is set.
+                                              If this field is set, it additionally applies a fractional percent check so that only a
+                                              fraction of requests are logged.
+                                            properties:
+                                              denominator:
+                                                description: |-
+                                                  Specifies the denominator. If the denominator specified is less than the numerator,
+                                                  the final fractional percentage is capped at 1 (100%).
+                                                  Defaults to HUNDRED.
+                                                enum:
+                                                - HUNDRED
+                                                - TEN_THOUSAND
+                                                - MILLION
+                                                type: string
+                                              numerator:
+                                                description: Specifies the numerator.
+                                                  Defaults to 0.
+                                                format: int32
+                                                minimum: 0
+                                                type: integer
+                                            required:
+                                            - numerator
+                                            type: object
+                                          runtimeKey:
+                                            description: |-
+                                              The runtime key to look up in the runtime implementation. This key determines whether
+                                              the access log is enabled. When the runtime key value is set, the filter checks this key
+                                              at runtime to decide whether to log each request.
+                                            minLength: 1
+                                            type: string
+                                          useIndependentRandomness:
+                                            description: |-
+                                              If set to true, the filter uses Envoy's independent randomness source.
+                                              When false (the default), the filter uses the runtime key lookup.
+                                            type: boolean
+                                        required:
+                                        - runtimeKey
+                                        type: object
                                       statusCodeFilter:
                                         description: |-
                                           StatusCodeFilter filters based on HTTP status code.
@@ -693,6 +738,51 @@ spec:
                                         required:
                                         - flags
                                         type: object
+                                      runtimeFilter:
+                                        description: |-
+                                          Filters for random sampling of access logs.
+                                          Based on: https://www.envoyproxy.io/docs/envoy/v1.33.0/api-v3/config/accesslog/v3/accesslog.proto#config-accesslog-v3-runtimefilter
+                                        properties:
+                                          percentSampled:
+                                            description: |-
+                                              By default, the runtime filter will log on every request when the runtime key is set.
+                                              If this field is set, it additionally applies a fractional percent check so that only a
+                                              fraction of requests are logged.
+                                            properties:
+                                              denominator:
+                                                description: |-
+                                                  Specifies the denominator. If the denominator specified is less than the numerator,
+                                                  the final fractional percentage is capped at 1 (100%).
+                                                  Defaults to HUNDRED.
+                                                enum:
+                                                - HUNDRED
+                                                - TEN_THOUSAND
+                                                - MILLION
+                                                type: string
+                                              numerator:
+                                                description: Specifies the numerator.
+                                                  Defaults to 0.
+                                                format: int32
+                                                minimum: 0
+                                                type: integer
+                                            required:
+                                            - numerator
+                                            type: object
+                                          runtimeKey:
+                                            description: |-
+                                              The runtime key to look up in the runtime implementation. This key determines whether
+                                              the access log is enabled. When the runtime key value is set, the filter checks this key
+                                              at runtime to decide whether to log each request.
+                                            minLength: 1
+                                            type: string
+                                          useIndependentRandomness:
+                                            description: |-
+                                              If set to true, the filter uses Envoy's independent randomness source.
+                                              When false (the default), the filter uses the runtime key lookup.
+                                            type: boolean
+                                        required:
+                                        - runtimeKey
+                                        type: object
                                       statusCodeFilter:
                                         description: |-
                                           StatusCodeFilter filters based on HTTP status code.
@@ -736,6 +826,51 @@ spec:
                                       type: array
                                   required:
                                   - flags
+                                  type: object
+                                runtimeFilter:
+                                  description: |-
+                                    Filters for random sampling of access logs.
+                                    Based on: https://www.envoyproxy.io/docs/envoy/v1.33.0/api-v3/config/accesslog/v3/accesslog.proto#config-accesslog-v3-runtimefilter
+                                  properties:
+                                    percentSampled:
+                                      description: |-
+                                        By default, the runtime filter will log on every request when the runtime key is set.
+                                        If this field is set, it additionally applies a fractional percent check so that only a
+                                        fraction of requests are logged.
+                                      properties:
+                                        denominator:
+                                          description: |-
+                                            Specifies the denominator. If the denominator specified is less than the numerator,
+                                            the final fractional percentage is capped at 1 (100%).
+                                            Defaults to HUNDRED.
+                                          enum:
+                                          - HUNDRED
+                                          - TEN_THOUSAND
+                                          - MILLION
+                                          type: string
+                                        numerator:
+                                          description: Specifies the numerator. Defaults
+                                            to 0.
+                                          format: int32
+                                          minimum: 0
+                                          type: integer
+                                      required:
+                                      - numerator
+                                      type: object
+                                    runtimeKey:
+                                      description: |-
+                                        The runtime key to look up in the runtime implementation. This key determines whether
+                                        the access log is enabled. When the runtime key value is set, the filter checks this key
+                                        at runtime to decide whether to log each request.
+                                      minLength: 1
+                                      type: string
+                                    useIndependentRandomness:
+                                      description: |-
+                                        If set to true, the filter uses Envoy's independent randomness source.
+                                        When false (the default), the filter uses the runtime key lookup.
+                                      type: boolean
+                                  required:
+                                  - runtimeKey
                                   type: object
                                 statusCodeFilter:
                                   description: |-
@@ -1965,65 +2100,29 @@ spec:
                   proxyProtocol:
                     description: |-
                       ProxyProtocol configures the PROXY protocol listener filter.
-                      When set, Envoy will expect connections to include the PROXY protocol header.
+                      By default, when set, Envoy will require connections to include the PROXY
+                      protocol header. This behavior can be relaxed by setting
+                      allowRequestsWithoutProxyProtocol to true, which allows the listener to
+                      also accept connections without the PROXY protocol header.
                       This is commonly used when kgateway is behind a load balancer that preserves client IP information.
                       See here for more information: https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/listener/proxy_protocol/v3/proxy_protocol.proto
-                    type: object
-                  rbac:
-                    description: |-
-                      RBAC specifies network-level role-based access control for this listener.
-                      Network RBAC is evaluated at the TCP connection level, before any HTTP processing begins.
-                      This allows filtering based on connection attributes such as source IP address, destination port,
-                      and TLS client certificate information.
-
-                      Available CEL attributes for network RBAC include:
-                        - source.address: Source IP address (e.g., "192.168.1.100")
-                        - source.port: Source port number
-                        - destination.address: Destination IP address
-                        - destination.port: Destination port (e.g., 443, 8080)
-                        - connection.tls.subject: TLS client certificate subject
-                        - connection.tls.uri_san: TLS URI Subject Alternative Name
-
-                      Example: Allow only corporate network IPs
-                        rbac:
-                          policy:
-                            matchExpressions:
-                              - 'source.address.startsWith("10.0.0.")'
-                              - 'source.address.startsWith("192.168.0.")'
-                          action: Allow
                     properties:
-                      action:
-                        default: Allow
+                      allowRequestsWithoutProxyProtocol:
                         description: |-
-                          Action defines whether the rule allows or denies the request if matched.
-                          If unspecified, the default is "Allow".
-                        enum:
-                        - Allow
-                        - Deny
-                        type: string
-                      policy:
-                        description: |-
-                          Policy specifies the Authorization rule to evaluate.
-                          A policy matches when **any** of the conditions evaluates to true.
-                        properties:
-                          matchExpressions:
-                            description: |-
-                              MatchExpressions defines a set of conditions that must be satisfied for the rule to match.
-                              These expression should be in the form of a Common Expression Language (CEL) expression.
-                            items:
-                              description: CELExpression represents a Common Expression
-                                Language (CEL) expression.
-                              maxLength: 16384
-                              minLength: 1
-                              type: string
-                            maxItems: 256
-                            minItems: 1
-                            type: array
-                        required:
-                        - matchExpressions
-                        type: object
-                    required:
-                    - policy
+                          AllowRequestsWithoutProxyProtocol, when true, configures the PROXY protocol
+                          listener filter to accept connections that do not include a PROXY protocol
+                          header in addition to those that do. This allows a single listener to serve
+                          mixed traffic, e.g. PROXY-preserving load balancer traffic plus direct
+                          in-cluster traffic on the same port.
+
+                          Security: accepting connections without a PROXY header is non-conformant
+                          with the PROXY protocol spec and allows clients to spoof the perceived
+                          source address. Only enable this when every source that can reach the
+                          listener is trusted. See
+                          https://www.haproxy.org/download/2.1/doc/proxy-protocol.txt.
+
+                          Defaults to false.
+                        type: boolean
                     type: object
                 type: object
               perPort:
@@ -2253,6 +2352,51 @@ spec:
                                                   type: array
                                               required:
                                               - flags
+                                              type: object
+                                            runtimeFilter:
+                                              description: |-
+                                                Filters for random sampling of access logs.
+                                                Based on: https://www.envoyproxy.io/docs/envoy/v1.33.0/api-v3/config/accesslog/v3/accesslog.proto#config-accesslog-v3-runtimefilter
+                                              properties:
+                                                percentSampled:
+                                                  description: |-
+                                                    By default, the runtime filter will log on every request when the runtime key is set.
+                                                    If this field is set, it additionally applies a fractional percent check so that only a
+                                                    fraction of requests are logged.
+                                                  properties:
+                                                    denominator:
+                                                      description: |-
+                                                        Specifies the denominator. If the denominator specified is less than the numerator,
+                                                        the final fractional percentage is capped at 1 (100%).
+                                                        Defaults to HUNDRED.
+                                                      enum:
+                                                      - HUNDRED
+                                                      - TEN_THOUSAND
+                                                      - MILLION
+                                                      type: string
+                                                    numerator:
+                                                      description: Specifies the numerator.
+                                                        Defaults to 0.
+                                                      format: int32
+                                                      minimum: 0
+                                                      type: integer
+                                                  required:
+                                                  - numerator
+                                                  type: object
+                                                runtimeKey:
+                                                  description: |-
+                                                    The runtime key to look up in the runtime implementation. This key determines whether
+                                                    the access log is enabled. When the runtime key value is set, the filter checks this key
+                                                    at runtime to decide whether to log each request.
+                                                  minLength: 1
+                                                  type: string
+                                                useIndependentRandomness:
+                                                  description: |-
+                                                    If set to true, the filter uses Envoy's independent randomness source.
+                                                    When false (the default), the filter uses the runtime key lookup.
+                                                  type: boolean
+                                              required:
+                                              - runtimeKey
                                               type: object
                                             statusCodeFilter:
                                               description: |-
@@ -2588,6 +2732,51 @@ spec:
                                               required:
                                               - flags
                                               type: object
+                                            runtimeFilter:
+                                              description: |-
+                                                Filters for random sampling of access logs.
+                                                Based on: https://www.envoyproxy.io/docs/envoy/v1.33.0/api-v3/config/accesslog/v3/accesslog.proto#config-accesslog-v3-runtimefilter
+                                              properties:
+                                                percentSampled:
+                                                  description: |-
+                                                    By default, the runtime filter will log on every request when the runtime key is set.
+                                                    If this field is set, it additionally applies a fractional percent check so that only a
+                                                    fraction of requests are logged.
+                                                  properties:
+                                                    denominator:
+                                                      description: |-
+                                                        Specifies the denominator. If the denominator specified is less than the numerator,
+                                                        the final fractional percentage is capped at 1 (100%).
+                                                        Defaults to HUNDRED.
+                                                      enum:
+                                                      - HUNDRED
+                                                      - TEN_THOUSAND
+                                                      - MILLION
+                                                      type: string
+                                                    numerator:
+                                                      description: Specifies the numerator.
+                                                        Defaults to 0.
+                                                      format: int32
+                                                      minimum: 0
+                                                      type: integer
+                                                  required:
+                                                  - numerator
+                                                  type: object
+                                                runtimeKey:
+                                                  description: |-
+                                                    The runtime key to look up in the runtime implementation. This key determines whether
+                                                    the access log is enabled. When the runtime key value is set, the filter checks this key
+                                                    at runtime to decide whether to log each request.
+                                                  minLength: 1
+                                                  type: string
+                                                useIndependentRandomness:
+                                                  description: |-
+                                                    If set to true, the filter uses Envoy's independent randomness source.
+                                                    When false (the default), the filter uses the runtime key lookup.
+                                                  type: boolean
+                                              required:
+                                              - runtimeKey
+                                              type: object
                                             statusCodeFilter:
                                               description: |-
                                                 StatusCodeFilter filters based on HTTP status code.
@@ -2631,6 +2820,51 @@ spec:
                                             type: array
                                         required:
                                         - flags
+                                        type: object
+                                      runtimeFilter:
+                                        description: |-
+                                          Filters for random sampling of access logs.
+                                          Based on: https://www.envoyproxy.io/docs/envoy/v1.33.0/api-v3/config/accesslog/v3/accesslog.proto#config-accesslog-v3-runtimefilter
+                                        properties:
+                                          percentSampled:
+                                            description: |-
+                                              By default, the runtime filter will log on every request when the runtime key is set.
+                                              If this field is set, it additionally applies a fractional percent check so that only a
+                                              fraction of requests are logged.
+                                            properties:
+                                              denominator:
+                                                description: |-
+                                                  Specifies the denominator. If the denominator specified is less than the numerator,
+                                                  the final fractional percentage is capped at 1 (100%).
+                                                  Defaults to HUNDRED.
+                                                enum:
+                                                - HUNDRED
+                                                - TEN_THOUSAND
+                                                - MILLION
+                                                type: string
+                                              numerator:
+                                                description: Specifies the numerator.
+                                                  Defaults to 0.
+                                                format: int32
+                                                minimum: 0
+                                                type: integer
+                                            required:
+                                            - numerator
+                                            type: object
+                                          runtimeKey:
+                                            description: |-
+                                              The runtime key to look up in the runtime implementation. This key determines whether
+                                              the access log is enabled. When the runtime key value is set, the filter checks this key
+                                              at runtime to decide whether to log each request.
+                                            minLength: 1
+                                            type: string
+                                          useIndependentRandomness:
+                                            description: |-
+                                              If set to true, the filter uses Envoy's independent randomness source.
+                                              When false (the default), the filter uses the runtime key lookup.
+                                            type: boolean
+                                        required:
+                                        - runtimeKey
                                         type: object
                                       statusCodeFilter:
                                         description: |-
@@ -3889,65 +4123,29 @@ spec:
                         proxyProtocol:
                           description: |-
                             ProxyProtocol configures the PROXY protocol listener filter.
-                            When set, Envoy will expect connections to include the PROXY protocol header.
+                            By default, when set, Envoy will require connections to include the PROXY
+                            protocol header. This behavior can be relaxed by setting
+                            allowRequestsWithoutProxyProtocol to true, which allows the listener to
+                            also accept connections without the PROXY protocol header.
                             This is commonly used when kgateway is behind a load balancer that preserves client IP information.
                             See here for more information: https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/listener/proxy_protocol/v3/proxy_protocol.proto
-                          type: object
-                        rbac:
-                          description: |-
-                            RBAC specifies network-level role-based access control for this listener.
-                            Network RBAC is evaluated at the TCP connection level, before any HTTP processing begins.
-                            This allows filtering based on connection attributes such as source IP address, destination port,
-                            and TLS client certificate information.
-
-                            Available CEL attributes for network RBAC include:
-                              - source.address: Source IP address (e.g., "192.168.1.100")
-                              - source.port: Source port number
-                              - destination.address: Destination IP address
-                              - destination.port: Destination port (e.g., 443, 8080)
-                              - connection.tls.subject: TLS client certificate subject
-                              - connection.tls.uri_san: TLS URI Subject Alternative Name
-
-                            Example: Allow only corporate network IPs
-                              rbac:
-                                policy:
-                                  matchExpressions:
-                                    - 'source.address.startsWith("10.0.0.")'
-                                    - 'source.address.startsWith("192.168.0.")'
-                                action: Allow
                           properties:
-                            action:
-                              default: Allow
+                            allowRequestsWithoutProxyProtocol:
                               description: |-
-                                Action defines whether the rule allows or denies the request if matched.
-                                If unspecified, the default is "Allow".
-                              enum:
-                              - Allow
-                              - Deny
-                              type: string
-                            policy:
-                              description: |-
-                                Policy specifies the Authorization rule to evaluate.
-                                A policy matches when **any** of the conditions evaluates to true.
-                              properties:
-                                matchExpressions:
-                                  description: |-
-                                    MatchExpressions defines a set of conditions that must be satisfied for the rule to match.
-                                    These expression should be in the form of a Common Expression Language (CEL) expression.
-                                  items:
-                                    description: CELExpression represents a Common
-                                      Expression Language (CEL) expression.
-                                    maxLength: 16384
-                                    minLength: 1
-                                    type: string
-                                  maxItems: 256
-                                  minItems: 1
-                                  type: array
-                              required:
-                              - matchExpressions
-                              type: object
-                          required:
-                          - policy
+                                AllowRequestsWithoutProxyProtocol, when true, configures the PROXY protocol
+                                listener filter to accept connections that do not include a PROXY protocol
+                                header in addition to those that do. This allows a single listener to serve
+                                mixed traffic, e.g. PROXY-preserving load balancer traffic plus direct
+                                in-cluster traffic on the same port.
+
+                                Security: accepting connections without a PROXY header is non-conformant
+                                with the PROXY protocol spec and allows clients to spoof the perceived
+                                source address. Only enable this when every source that can reach the
+                                listener is trusted. See
+                                https://www.haproxy.org/download/2.1/doc/proxy-protocol.txt.
+
+                                Defaults to false.
+                              type: boolean
                           type: object
                       type: object
                     port:

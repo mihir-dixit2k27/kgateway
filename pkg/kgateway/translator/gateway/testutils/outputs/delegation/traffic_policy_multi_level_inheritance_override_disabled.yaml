@@ -117,7 +117,7 @@ Listeners:
             filterConfig:
               '@type': type.googleapis.com/google.protobuf.StringValue
               value: '{}'
-            filterName: http_simple_mutations
+            filterName: rustformation
         - name: envoy.filters.http.router
           typedConfig:
             '@type': type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -163,7 +163,7 @@ Routes:
           filterConfig:
             '@type': type.googleapis.com/google.protobuf.StringValue
             value: '{"response":{"add":[{"name":"abc","value":"custom-value-abc"}]}}'
-          perRouteConfigName: http_simple_mutations
+          perRouteConfigName: rustformation
         ext_proc/a/extproc-ext:
           '@type': type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExtProcPerRoute
           overrides: {}
@@ -201,7 +201,7 @@ Routes:
           filterConfig:
             '@type': type.googleapis.com/google.protobuf.StringValue
             value: '{"response":{"add":[{"name":"abc","value":"custom-value-abc"}]}}'
-          perRouteConfigName: http_simple_mutations
+          perRouteConfigName: rustformation
 Statuses:
   gateways:
     infra/example-gateway:
@@ -216,6 +216,11 @@ Statuses:
         reason: Programmed
         status: "True"
         type: Programmed
+      - lastTransitionTime: null
+        message: Successfully resolved all Gateway references
+        reason: ResolvedRefs
+        status: "True"
+        type: ResolvedRefs
       listeners:
       - attachedRoutes: 1
         conditions:
