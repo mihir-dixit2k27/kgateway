@@ -4,6 +4,8 @@ package base
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
 
+	"github.com/kgateway-dev/kgateway/v2/pkg/utils/kubeutils"
 	"github.com/kgateway-dev/kgateway/v2/test/e2e"
 	"github.com/kgateway-dev/kgateway/v2/test/e2e/defaults"
 	"github.com/kgateway-dev/kgateway/v2/test/testutils"
@@ -65,8 +68,8 @@ var (
 	GwApiV1_3_0 = GwApiVersionMustParse("1.3.0")
 	// BackendTLSPolicy moved to standard/v1 in 1.4.0 and experimental (alpha1v3 version is not supported), HTTPRoutes.spec.rules[].name was added to standard in 1.4.0
 	GwApiV1_4_0 = GwApiVersionMustParse("1.4.0")
-	// ListenerSet was promoted to gateway.networking.k8s.io/v1 in 1.5.1 and is available in the standard channel.
-	GwApiV1_5_1 = GwApiVersionMustParse("1.5.1")
+	// ListenerSet was promoted to gateway.networking.k8s.io/v1 in 1.5.0 and is available in the standard channel.
+	GwApiV1_5_0 = GwApiVersionMustParse("1.5.0")
 
 	GwApiRequireRouteNames = map[GwApiChannel]*GwApiVersion{
 		GwApiChannelExperimental: &GwApiV1_2_0,
@@ -80,7 +83,7 @@ var (
 
 	GwApiRequireListenerSets = map[GwApiChannel]*GwApiVersion{
 		GwApiChannelExperimental: &GwApiV1_3_0,
-		GwApiChannelStandard:     &GwApiV1_5_1,
+		GwApiChannelStandard:     &GwApiV1_5_0,
 	}
 
 	GwApiRequireCorsFilters = map[GwApiChannel]*GwApiVersion{
@@ -112,6 +115,12 @@ var (
 
 // selfManagedGatewayAnnotation is the annotation used to mark a Gateway as self-managed in e2e tests
 const selfManagedGatewayAnnotation = "e2e.kgateway.dev/self-managed"
+
+const (
+	imagePullerPodPrefix        = "image-puller-"
+	imagePullerPodNameMaxLength = 63
+	imagePullerPodHashLength    = 12
+)
 
 // TestCase defines the manifests and resources used by a test or test suite.
 type TestCase struct {
@@ -453,15 +462,7 @@ func (s *BaseTestingSuite) prePullImages(testCase *TestCase) {
 
 // pullImage creates a temporary pod to pull the given image with a long timeout.
 func (s *BaseTestingSuite) pullImage(image string) {
-	// Create a unique name for the puller pod based on image name
-	// Replace invalid characters for kubernetes names
-	safeName := strings.ReplaceAll(image, "/", "-")
-	safeName = strings.ReplaceAll(safeName, ":", "-")
-	safeName = strings.ReplaceAll(safeName, ".", "-")
-	if len(safeName) > 50 {
-		safeName = safeName[:50]
-	}
-	podName := fmt.Sprintf("image-puller-%s", safeName)
+	podName := imagePullerPodName(image)
 
 	pullerPod := fmt.Sprintf(`
 apiVersion: v1
@@ -495,6 +496,46 @@ spec:
 
 	// Clean up the puller pod
 	_ = s.TestInstallation.Actions.Kubectl().RunCommand(s.Ctx, "delete", "pod", podName, "-n", "default", "--ignore-not-found")
+}
+
+func imagePullerPodName(image string) string {
+	safeName := sanitizeDNSName(image)
+
+	hash := sha256.Sum256([]byte(image))
+	hashStr := hex.EncodeToString(hash[:])[:imagePullerPodHashLength]
+
+	// Keep the name DNS-safe and <=63 chars while preserving uniqueness across
+	// different images that may sanitize or truncate to the same prefix.
+	maxSafeNameLength := imagePullerPodNameMaxLength - len(imagePullerPodPrefix) - len(hashStr) - 1
+	if len(safeName) > maxSafeNameLength {
+		safeName = strings.Trim(safeName[:maxSafeNameLength], "-")
+	}
+
+	return fmt.Sprintf("%s%s-%s", imagePullerPodPrefix, safeName, hashStr)
+}
+
+func sanitizeDNSName(value string) string {
+	value = strings.ToLower(value)
+
+	var builder strings.Builder
+	builder.Grow(len(value))
+
+	lastWasDash := false
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			builder.WriteRune(r)
+			lastWasDash = false
+		case r >= '0' && r <= '9':
+			builder.WriteRune(r)
+			lastWasDash = false
+		case builder.Len() > 0 && !lastWasDash:
+			builder.WriteByte('-')
+			lastWasDash = true
+		}
+	}
+
+	return strings.Trim(builder.String(), "-")
 }
 
 // ApplyManifests applies the manifests and waits until the resources are created and ready.
@@ -660,7 +701,7 @@ func (s *BaseTestingSuite) loadDynamicResources(testCase *TestCase) {
 			// to be created, so add them to the dynamic resource list
 			if !selfManaged {
 				proxyObjectMeta := metav1.ObjectMeta{
-					Name:      gw.GetName(),
+					Name:      kubeutils.SafeGatewayLabelValue(gw.GetName()),
 					Namespace: gw.GetNamespace(),
 				}
 				proxyResources := []client.Object{

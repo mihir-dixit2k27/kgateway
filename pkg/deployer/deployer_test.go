@@ -1487,6 +1487,12 @@ var _ = Describe("Deployer", func() {
 				return params
 			}
 
+			fullyDefinedGatewayParamsWithExtraArgs = func() *kgateway.GatewayParameters {
+				params := fullyDefinedGatewayParameters()
+				params.Spec.Kube.EnvoyContainer.ExtraArgs = []string{"--base-id", "7", "--cpuset-threads"}
+				return params
+			}
+
 			withGatewayParams = func(gw *gwv1.Gateway, gwpName string) *gwv1.Gateway {
 				gw.Spec.Infrastructure = &gwv1.GatewayInfrastructure{
 					ParametersRef: &gwv1.LocalParametersReference{
@@ -1795,6 +1801,15 @@ var _ = Describe("Deployer", func() {
 			}))
 		}
 
+		fullyDefinedValidationExtraArgs := func(objs clientObjects, inp *input) {
+			fullyDefinedValidationWithoutRunAsUser(objs, inp)
+
+			envoyContainer := objs.findDeployment(defaultDeploymentName).Spec.Template.Spec.Containers[0]
+			extraArgs := []string{"--base-id", "7", "--cpuset-threads"}
+			Expect(envoyContainer.Args).To(ContainElements(extraArgs[0], extraArgs[1], extraArgs[2]))
+			Expect(envoyContainer.Args[len(envoyContainer.Args)-len(extraArgs):]).To(Equal(extraArgs))
+		}
+
 		DescribeTable("create and validate objs", func(inp *input, expected *expectedOutput) {
 			checkErr := func(err, expectedErr error) (shouldReturn bool) {
 				GinkgoHelper()
@@ -1933,6 +1948,15 @@ var _ = Describe("Deployer", func() {
 					fullyDefinedValidationCustomEnv(objs, inp)
 				},
 			}),
+			Entry("Fully defined GatewayParameters with extra args", &input{
+				dInputs:    istioEnabledDeployerInputs(),
+				gw:         defaultGateway(),
+				defaultGwp: fullyDefinedGatewayParamsWithExtraArgs(),
+			}, &expectedOutput{
+				validationFunc: func(objs clientObjects, inp *input) {
+					fullyDefinedValidationExtraArgs(objs, inp)
+				},
+			}),
 			Entry("no listeners on gateway", &input{
 				dInputs: defaultDeployerInputs(),
 				gw: &gwv1.Gateway{
@@ -1960,7 +1984,7 @@ var _ = Describe("Deployer", func() {
 					Expect(port.NodePort).To(Equal(int32(0)))
 				},
 			}),
-			Entry("static NodePort", &input{
+			Entry("static NodePort on NodePort service", &input{
 				dInputs:    defaultDeployerInputs(),
 				gw:         defaultGatewayWithGatewayParams(gwpOverrideName),
 				defaultGwp: defaultGatewayParams(),
@@ -1973,6 +1997,40 @@ var _ = Describe("Deployer", func() {
 						Kube: &kgateway.KubernetesProxyConfig{
 							Service: &kgateway.Service{
 								Type: ptr.To(corev1.ServiceTypeNodePort),
+								Ports: []kgateway.Port{
+									{
+										Port:     80,
+										NodePort: ptr.To[int32](30000),
+									},
+								},
+							},
+						},
+					},
+				},
+			}, &expectedOutput{
+				validationFunc: func(objs clientObjects, inp *input) {
+					svc := objs.findService(defaultServiceName)
+					Expect(svc).NotTo(BeNil())
+
+					port := svc.Spec.Ports[0]
+					Expect(port.Port).To(Equal(int32(80)))
+					Expect(port.TargetPort.IntVal).To(Equal(int32(80)))
+					Expect(port.NodePort).To(Equal(int32(30000)))
+				},
+			}),
+			Entry("static NodePort on LoadBalancer service", &input{
+				dInputs:    defaultDeployerInputs(),
+				gw:         defaultGatewayWithGatewayParams(gwpOverrideName),
+				defaultGwp: defaultGatewayParams(),
+				overrideGwp: &kgateway.GatewayParameters{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      gwpOverrideName,
+						Namespace: defaultNamespace,
+					},
+					Spec: kgateway.GatewayParametersSpec{
+						Kube: &kgateway.KubernetesProxyConfig{
+							Service: &kgateway.Service{
+								Type: ptr.To(corev1.ServiceTypeLoadBalancer),
 								Ports: []kgateway.Port{
 									{
 										Port:     80,

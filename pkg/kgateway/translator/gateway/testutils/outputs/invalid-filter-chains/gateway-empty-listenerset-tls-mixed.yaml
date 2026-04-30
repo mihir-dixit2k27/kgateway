@@ -48,6 +48,11 @@ Statuses:
         reason: Programmed
         status: "True"
         type: Programmed
+      - lastTransitionTime: null
+        message: Successfully resolved all Gateway references
+        reason: ResolvedRefs
+        status: "True"
+        type: ResolvedRefs
   listenerSets:
     default/example-listenerset:
       conditions:
@@ -134,3 +139,4 @@ Statuses:
           group: gateway.networking.k8s.io
           kind: ListenerSet
           name: example-listenerset
+          sectionName: tls-with-routes

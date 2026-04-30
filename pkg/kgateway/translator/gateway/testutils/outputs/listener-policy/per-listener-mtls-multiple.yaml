@@ -219,6 +219,11 @@ Statuses:
         reason: Programmed
         status: "True"
         type: Programmed
+      - lastTransitionTime: null
+        message: Successfully resolved all Gateway references
+        reason: ResolvedRefs
+        status: "True"
+        type: ResolvedRefs
       listeners:
       - attachedRoutes: 1
         conditions:
@@ -323,6 +328,7 @@ Statuses:
           group: ""
           kind: ""
           name: example-gateway
+          sectionName: tenant-a-https
     default/tenant-b-route:
       parents:
       - conditions:
@@ -341,6 +347,7 @@ Statuses:
           group: ""
           kind: ""
           name: example-gateway
+          sectionName: tenant-b-https
     default/tenant-c-route:
       parents:
       - conditions:
@@ -359,6 +366,7 @@ Statuses:
           group: ""
           kind: ""
           name: example-gateway
+          sectionName: tenant-c-https
   policies:
     ListenerPolicy/default/per-listener-mtls-a:
       ancestors:
