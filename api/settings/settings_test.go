@@ -49,6 +49,7 @@ func allEnvVarsSet() map[string]string {
 		"KGW_ENABLE_EXPERIMENTAL_GATEWAY_API_FEATURES": "false",
 		"KGW_ENABLE_AUTH_METADATA":                     "true",
 		"KGW_WORKLOAD_ENTRIES_EXCLUSION_LABELS":        "example.io/managed-by,example.io/other-key",
+		"KGW_ROUTE_SOURCE_METADATA_ENABLED":            "true",
 	}
 }
 
@@ -141,7 +142,8 @@ func TestSettings(t *testing.T) {
 						Namespace: ptr.To(gwv1.Namespace("infra")),
 					},
 				},
-				EnableAuthMetadata: true,
+				EnableAuthMetadata:           true,
+				RouteSourceMetadataEnabled:   true,
 			},
 		},
 		{
