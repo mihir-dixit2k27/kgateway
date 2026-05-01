@@ -5,6 +5,8 @@ package common
 import (
 	"context"
 	"fmt"
+	"net"
+	"os"
 	"testing"
 
 	"istio.io/istio/pkg/log"
@@ -25,12 +27,17 @@ func SetupBaseConfig(ctx context.Context, t *testing.T, installation *e2e.TestIn
 	assert.NoError(t, err)
 }
 
-func SetupBaseGateway(ctx context.Context, installation *e2e.TestInstallation, name types.NamespacedName) {
-	address := installation.Assertions.EventuallyGatewayAddress(
+func SetupBaseGateway(ctx context.Context, t *testing.T, installation *e2e.TestInstallation, name types.NamespacedName) {
+	address := installation.AssertionsT(t).EventuallyGatewayAddress(
 		ctx,
 		name.Name,
 		name.Namespace,
 	)
+	// Allow overriding the gateway address for environments where the LB IP
+	// is not directly reachable from the host (e.g., k3d on macOS using port mapping).
+	if override := os.Getenv("GATEWAY_ADDRESS_OVERRIDE"); override != "" {
+		address = override
+	}
 	BaseGateway = Gateway{
 		NamespacedName: name,
 		Address:        address,
@@ -45,7 +52,13 @@ type Gateway struct {
 var BaseGateway Gateway
 
 func (g *Gateway) Send(t *testing.T, match *matchers.HttpResponse, opts ...curl.Option) {
-	fullOpts := append([]curl.Option{curl.WithHost(g.Address)}, opts...)
+	var hostOpt curl.Option
+	if _, _, err := net.SplitHostPort(g.Address); err == nil {
+		hostOpt = curl.WithHostPort(g.Address)
+	} else {
+		hostOpt = curl.WithHost(g.Address)
+	}
+	fullOpts := append([]curl.Option{hostOpt}, opts...)
 	retry.UntilSuccessOrFail(t, func() error {
 		r, err := curl.ExecuteRequest(fullOpts...)
 		if err != nil {

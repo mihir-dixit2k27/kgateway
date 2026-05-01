@@ -161,6 +161,19 @@ type TrafficPolicySpec struct {
 	// NOTE: This field is only honored for HTTPRoute and GRPCRoute targets.
 	// +optional
 	Tracing *RouteTracing `json:"tracing,omitempty"`
+
+	// FaultInjection configures fault injection for chaos engineering and
+	// resiliency testing. Supports delay injection, abort injection,
+	// and response rate limiting.
+	// +optional
+	FaultInjection *FaultInjectionPolicy `json:"faultInjection,omitempty"`
+
+	// ACL configures IP-based access control for HTTP requests.
+	// Rules are evaluated using longest-prefix matching on the effictive client IP
+	// from envoy base on settings. See the UseRemoteAddress, XffTrustedCIDRs,
+	// XffNumTrustedHops settings under ListenerPolicy -> HttpSettings for details.
+	// +optional
+	ACL *shared.ACLPolicy `json:"acl,omitempty"`
 }
 
 // URLRewrite specifies URL rewrite rules using regular expressions.
@@ -234,6 +247,43 @@ type Transform struct {
 	// If empty, body will not be buffered.
 	// +optional
 	Body *BodyTransformation `json:"body,omitempty"`
+
+	// DynamicMetadata is a list of dynamic metadata entries to set.
+	// The values are stored in Envoy dynamic metadata and can be used in access log
+	// templates or consumed by other filters down the chain.
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=16
+	DynamicMetadata []DynamicMetadataTransformation `json:"dynamicMetadata,omitempty"`
+}
+
+// DynamicMetadataTransformation defines a single dynamic metadata entry to set.
+type DynamicMetadataTransformation struct {
+	// Namespace is the dynamic metadata namespace.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	Namespace string `json:"namespace"`
+
+	// Key is the metadata key within the namespace.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	Key string `json:"key"`
+
+	// Value is the value to set in dynamic metadata.
+	// +required
+	Value DynamicMetadataValue `json:"value"`
+}
+
+// DynamicMetadataValue defines the value to set in dynamic metadata.
+// Exactly one field must be set.
+// +kubebuilder:validation:ExactlyOneOf=stringValue
+type DynamicMetadataValue struct {
+	// StringValue is an Inja template whose rendered output is stored as the metadata string value.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	StringValue *InjaTemplate `json:"stringValue,omitempty"`
 }
 
 type InjaTemplate string
@@ -259,7 +309,7 @@ type (
 
 // BodyparseBehavior defines how the body should be parsed
 // If set to json and the body is not json then the filter will not perform the transformation.
-// +kubebuilder:validation:Enum=AsString;AsJson
+// +kubebuilder:validation:Enum=AsString;AsJson;None
 type BodyParseBehavior string
 
 const (
@@ -267,18 +317,24 @@ const (
 	BodyParseBehaviorAsString BodyParseBehavior = "AsString"
 	// BodyParseBehaviorAsJSON will parse the body as a json object.
 	BodyParseBehaviorAsJSON BodyParseBehavior = "AsJson"
+	// BodyParseBehaviorNone will skip any body buffering and processing.
+	BodyParseBehaviorNone BodyParseBehavior = "None"
 )
 
 // BodyTransformation controls how the body should be parsed and transformed.
 type BodyTransformation struct {
 	// ParseAs defines what auto formatting should be applied to the body.
 	// This can make interacting with keys within a json body much easier if AsJson is selected.
+	// When set to None, it will not buffer the body and will skip all body processing. In
+	// addition, attempt to extract json variables from the body using inja template in the header
+	// will result in 400 response.
 	// +kubebuilder:default=AsString
 	// +optional
 	ParseAs BodyParseBehavior `json:"parseAs,omitempty"`
 
 	// Value is the template to apply to generate the output value for the body.
-	// Only Inja templates are supported.
+	// Only Inja templates are supported. If ParseAs field is set to None,
+	// this Value field is ignored and no body transformation will be done.
 	// +optional
 	Value *InjaTemplate `json:"value,omitempty"`
 }
@@ -663,4 +719,93 @@ type RouteTracing struct {
 	// tracing is configured via ListenerPolicy.
 	// +optional
 	Disable *shared.PolicyDisable `json:"disable,omitempty"`
+}
+
+// FaultInjectionPolicy configures fault injection for testing service resiliency.
+// At least one of delay, abort, responseRateLimit, or disable must be specified.
+//
+// +kubebuilder:validation:AtLeastOneOf=delay;abort;responseRateLimit;disable
+type FaultInjectionPolicy struct {
+	// Delay injects latency into requests before forwarding upstream.
+	// +optional
+	Delay *FaultDelay `json:"delay,omitempty"`
+
+	// Abort injects HTTP or gRPC errors to terminate requests early.
+	// +optional
+	Abort *FaultAbort `json:"abort,omitempty"`
+
+	// ResponseRateLimit limits the response body data rate to simulate
+	// slow or degraded upstream connections.
+	// +optional
+	ResponseRateLimit *FaultResponseRateLimit `json:"responseRateLimit,omitempty"`
+
+	// MaxActiveFaults limits the number of concurrent active faults.
+	// When this limit is reached, new requests will not have faults injected.
+	// If not specified, defaults to unlimited.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	MaxActiveFaults *uint32 `json:"maxActiveFaults,omitempty"`
+
+	// Disable the fault injection filter.
+	// Can be used to disable fault injection policies applied at a higher level
+	// in the config hierarchy.
+	// +optional
+	Disable *shared.PolicyDisable `json:"disable,omitempty"`
+}
+
+// FaultDelay configures latency injection.
+type FaultDelay struct {
+	// FixedDelay is the duration to delay before forwarding the request.
+	// +required
+	// +kubebuilder:validation:XValidation:rule="matches(self, '^([0-9]{1,5}(h|m|s|ms)){1,4}$')",message="invalid duration value"
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1ms')",message="must be at least 1ms"
+	// +kubebuilder:validation:XValidation:rule="duration(self) <= duration('1h')",message="must not exceed 1h"
+	FixedDelay metav1.Duration `json:"fixedDelay"`
+
+	// Percentage of requests to inject the delay on. Defaults to 100.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:default=100
+	Percentage *int32 `json:"percentage,omitempty"`
+}
+
+// FaultAbort configures request abort injection.
+//
+// +kubebuilder:validation:ExactlyOneOf=httpStatus;grpcStatus
+type FaultAbort struct {
+	// HttpStatus is the HTTP status code to return when aborting a request.
+	// +optional
+	// +kubebuilder:validation:Minimum=200
+	// +kubebuilder:validation:Maximum=599
+	HttpStatus *int32 `json:"httpStatus,omitempty"`
+
+	// GrpcStatus is the gRPC status code to return when aborting a request.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=16
+	GrpcStatus *int32 `json:"grpcStatus,omitempty"`
+
+	// Percentage of requests to abort. Defaults to 100.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:default=100
+	Percentage *int32 `json:"percentage,omitempty"`
+}
+
+// FaultResponseRateLimit configures response body rate limiting to simulate
+// slow upstream connections.
+type FaultResponseRateLimit struct {
+	// KbitsPerSecond limits the response rate to the specified kilobits per second.
+	// +required
+	// +kubebuilder:validation:Minimum=1
+	KbitsPerSecond uint64 `json:"kbitsPerSecond"`
+
+	// Percentage of requests to apply the rate limit on. Defaults to 100.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:default=100
+	Percentage *int32 `json:"percentage,omitempty"`
 }

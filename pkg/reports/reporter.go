@@ -57,9 +57,13 @@ type ParentRefKey struct {
 	Group string
 	Kind  string
 	types.NamespacedName
+	SectionName string
 }
 
 func (p *ParentRefKey) String() string {
+	if p.SectionName != "" {
+		return fmt.Sprintf("%s/%s/%s/%s", p.Group, p.Kind, p.NamespacedName.String(), p.SectionName)
+	}
 	return fmt.Sprintf("%s/%s/%s", p.Group, p.Kind, p.NamespacedName.String())
 }
 
@@ -86,7 +90,11 @@ func key(obj metav1.Object) types.NamespacedName {
 // NOTE: Exported for unit testing, validation_test.go should be refactored to reduce this visibility
 func (r *ReportMap) Gateway(gateway *gwv1.Gateway) *GatewayReport {
 	key := key(gateway)
-	return r.Gateways[key]
+	report := r.Gateways[key]
+	if report != nil {
+		report.observedGeneration = gateway.Generation
+	}
+	return report
 }
 
 func (r *ReportMap) GatewayNamespaceName(key types.NamespacedName) *GatewayReport {
@@ -126,7 +134,11 @@ func (r *ReportMap) ListenerSet(listenerSet client.Object) *ListenerSetReport {
 		r.ListenerSets[gvk] = make(map[types.NamespacedName]*ListenerSetReport)
 	}
 	key := key(listenerSet)
-	return r.ListenerSets[gvk][key]
+	report := r.ListenerSets[gvk][key]
+	if report != nil {
+		report.observedGeneration = listenerSet.GetGeneration()
+	}
+	return report
 }
 
 func (r *ReportMap) newListenerSetReport(listenerSet client.Object) *ListenerSetReport {
@@ -159,15 +171,35 @@ func (r *ReportMap) route(obj metav1.Object) *RouteReport {
 
 	switch obj.(type) {
 	case *gwv1.HTTPRoute:
-		return r.HTTPRoutes[key]
+		report := r.HTTPRoutes[key]
+		if report != nil {
+			report.observedGeneration = obj.GetGeneration()
+		}
+		return report
 	case *gwv1a2.TCPRoute:
-		return r.TCPRoutes[key]
+		report := r.TCPRoutes[key]
+		if report != nil {
+			report.observedGeneration = obj.GetGeneration()
+		}
+		return report
 	case *gwv1.TLSRoute:
-		return r.TLSRoutes[key]
+		report := r.TLSRoutes[key]
+		if report != nil {
+			report.observedGeneration = obj.GetGeneration()
+		}
+		return report
 	case *gwv1a2.TLSRoute:
-		return r.TLSRoutes[key]
+		report := r.TLSRoutes[key]
+		if report != nil {
+			report.observedGeneration = obj.GetGeneration()
+		}
+		return report
 	case *gwv1.GRPCRoute:
-		return r.GRPCRoutes[key]
+		report := r.GRPCRoutes[key]
+		if report != nil {
+			report.observedGeneration = obj.GetGeneration()
+		}
+		return report
 	default:
 		slog.Warn("unsupported route type", "route_type", fmt.Sprintf("%T", obj))
 		return nil
@@ -364,6 +396,10 @@ func getParentRefKey(parentRef *gwv1.ParentReference) ParentRefKey {
 	if parentRef.Namespace != nil {
 		ns = string(*parentRef.Namespace)
 	}
+	var sectionName string
+	if parentRef.SectionName != nil {
+		sectionName = string(*parentRef.SectionName)
+	}
 	return ParentRefKey{
 		Group: group,
 		Kind:  kind,
@@ -371,6 +407,7 @@ func getParentRefKey(parentRef *gwv1.ParentReference) ParentRefKey {
 			Namespace: ns,
 			Name:      string(parentRef.Name),
 		},
+		SectionName: sectionName,
 	}
 }
 
@@ -414,6 +451,9 @@ func (r *RouteReport) parentRefs() []gwv1.ParentReference {
 			Kind:      new(gwv1.Kind(key.Kind)),
 			Name:      gwv1.ObjectName(key.Name),
 			Namespace: ns,
+		}
+		if key.SectionName != "" {
+			parentRef.SectionName = new(gwv1.SectionName(key.SectionName))
 		}
 		refs = append(refs, parentRef)
 	}

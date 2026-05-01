@@ -26,11 +26,14 @@ KIND="${KIND:-go tool kind}"
 HELM="${HELM:-go tool helm}"
 # If true, use localstack for lambda functions
 LOCALSTACK="${LOCALSTACK:-false}"
-# Registry cache reference for envoyinit Docker build (optional)
+# If true, use cloud-provider-kind instead of MetalLB for LoadBalancer support.
+CLOUD_PROVIDER_KIND="${CLOUD_PROVIDER_KIND:-false}"
+# Registry cache references for Docker builds (optional)
 ENVOYINIT_CACHE_REF="${ENVOYINIT_CACHE_REF:-}"
+CONTROLLER_CACHE_REF="${CONTROLLER_CACHE_REF:-}"
+SDS_CACHE_REF="${SDS_CACHE_REF:-}"
 
-# Export the variables so they are available in the environment
-export VERSION CLUSTER_NAME ENVOYINIT_CACHE_REF
+export VERSION CLUSTER_NAME ENVOYINIT_CACHE_REF CONTROLLER_CACHE_REF SDS_CACHE_REF
 
 function create_kind_cluster_or_skip() {
   activeClusters=$($KIND get clusters)
@@ -70,8 +73,12 @@ function create_and_setup() {
     kubectl apply --server-side --kustomize "https://github.com/kubernetes-sigs/gateway-api/config/crd/$CONFORMANCE_CHANNEL?ref=$CONFORMANCE_VERSION"
   fi
 
-  # TODO: extract metallb install to a diff function so we can let it run in the background
-  . $SCRIPT_DIR/setup-metalllb-on-kind.sh
+  if [[ "$CLOUD_PROVIDER_KIND" == "true" ]]; then
+    . "$SCRIPT_DIR/setup-cloud-provider-kind.sh"
+  else
+    # TODO: extract metallb install to a diff function so we can let it run in the background
+    . "$SCRIPT_DIR/setup-metalllb-on-kind.sh"
+  fi
 }
 
 # 1. Create a kind cluster (or skip creation if a cluster with name=CLUSTER_NAME already exists)
@@ -92,5 +99,5 @@ fi
 # 7. Setup localstack
 if [[ $LOCALSTACK == "true" ]]; then
   echo "Setting up localstack"
-  . $SCRIPT_DIR/setup-localstack.sh
+  . $SCRIPT_DIR/../setup-localstack.sh
 fi

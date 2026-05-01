@@ -175,6 +175,10 @@ jobs:
           name: release-notes
           path: _output
 
+      - name: Disable Docker cache for releases
+        if: ${{ needs.setup.outputs.needs_release == 'true' }}
+        run: echo "DOCKER_NO_CACHE=1" >> "$GITHUB_ENV"
+
       - name: Run goreleaser
         run: make release
         env:
@@ -216,7 +220,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [ 'amd64', 'arm64' ]
+        arch: ['amd64', 'arm64']
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Prep Go Runner

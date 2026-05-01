@@ -1,6 +1,7 @@
 package ir
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -108,6 +109,10 @@ type BackendObjectIR struct {
 	// optional port for if ObjectSource is a service that can have multiple ports.
 	// +krtEqualsTodo propagate backend port differences in equality
 	Port int32
+	// optional port name for the backend (e.g., "https", "http"). Used for sectionName based
+	// policy attachment (e.g., BackendTLSPolicy targeting a specific port by name).
+	// +krtEqualsTodo propagate backend port name differences in equality
+	PortName string
 	// optional application protocol for the backend. Can be used to enable http2.
 	// +krtEqualsTodo include AppProtocol in backend equality
 	AppProtocol AppProtocol
@@ -159,6 +164,11 @@ type BackendObjectIR struct {
 
 	// DisableIstioAutoMTLS indicates if Istio auto-mTLS should be disabled for this backend
 	DisableIstioAutoMTLS bool
+
+	// GatewayBackendClientCertificate contains a Gateway-scoped backend client certificate.
+	// When set, the backend must be translated to a distinct cluster so the client
+	// identity does not leak across Gateways that share the same backend.
+	GatewayBackendClientCertificate *GatewayBackendClientCertificateIR
 }
 
 // NewBackendObjectIR creates a new BackendObjectIR with pre-calculated resource name
@@ -211,7 +221,29 @@ func (c BackendObjectIR) Equals(in BackendObjectIR) bool {
 	if c.TrafficDistribution != in.TrafficDistribution {
 		return false
 	}
+	if !equalsGatewayBackendClientCertificate(c.GatewayBackendClientCertificate, in.GatewayBackendClientCertificate) {
+		return false
+	}
 	return true
+}
+
+func (c BackendObjectIR) CloneForGatewayBackendClientCertificate(
+	gateway ObjectSource,
+	clientCertificate *GatewayBackendClientCertificateIR,
+) BackendObjectIR {
+	clone := c
+	clone.ExtraKey = gatewayBackendClientCertificateExtraKey(c.ExtraKey, gateway)
+	clone.resourceName = BackendResourceName(clone.ObjectSource, clone.Port, clone.ExtraKey)
+	clone.GatewayBackendClientCertificate = clientCertificate
+	return clone
+}
+
+func gatewayBackendClientCertificateExtraKey(baseExtraKey string, gateway ObjectSource) string {
+	suffix := fmt.Sprintf("gw_backend_client_cert_%s_%s", gateway.Namespace, gateway.Name)
+	if baseExtraKey == "" {
+		return suffix
+	}
+	return baseExtraKey + "_" + suffix
 }
 
 func (c BackendObjectIR) ClusterName() string {
@@ -224,7 +256,6 @@ func (c BackendObjectIR) ClusterName() string {
 		return fmt.Sprintf("%s_%s_%s_%s_%d", gvPrefix, c.Namespace, c.Name, c.ExtraKey, c.Port)
 	}
 	return fmt.Sprintf("%s_%s_%s_%d", gvPrefix, c.Namespace, c.Name, c.Port)
-	// return fmt.Sprintf("%s~%s:%d", c.GvPrefix, c.ObjectSource.ResourceName(), c.Port)
 }
 
 func (c BackendObjectIR) GetObjectSource() ObjectSource {
@@ -345,6 +376,7 @@ type Gateway struct {
 
 	PerConnectionBufferLimitBytes *uint32
 	FrontendTLSConfig             *FrontendTLSConfigIR
+	BackendTLSConfig              *GatewayBackendTLSConfigIR
 }
 
 // FrontendTLSConfigIR represents the Gateway-level frontend TLS configuration
@@ -375,6 +407,24 @@ type ClientCertificateValidationIR struct {
 	AllowInsecureFallback bool
 }
 
+// GatewayBackendTLSConfigIR represents the Gateway-level backend TLS configuration.
+type GatewayBackendTLSConfigIR struct {
+	ClientCertificateRef *gwv1.SecretObjectReference
+}
+
+// GatewayBackendClientCertificateIR contains the resolved Gateway-scoped backend client identity.
+type GatewayBackendClientCertificateIR struct {
+	Certificate TLSCertificate
+}
+
+func (c GatewayBackendClientCertificateIR) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Certificate string `json:"certificate"`
+	}{
+		Certificate: "[REDACTED]",
+	})
+}
+
 func (c *ClientCertificateValidationIR) Equals(in any) bool {
 	c2, ok := in.(*ClientCertificateValidationIR)
 	if !ok {
@@ -396,7 +446,8 @@ func (c Gateway) Equals(in Gateway) bool {
 		c.Listeners.Equals(in.Listeners) &&
 		c.AllowedListenerSets.Equals(in.AllowedListenerSets) &&
 		c.DeniedListenerSets.Equals(in.DeniedListenerSets) &&
-		equalsFrontendTLSConfig(c.FrontendTLSConfig, in.FrontendTLSConfig)
+		equalsFrontendTLSConfig(c.FrontendTLSConfig, in.FrontendTLSConfig) &&
+		equalsGatewayBackendTLSConfig(c.BackendTLSConfig, in.BackendTLSConfig)
 }
 
 func equalsFrontendTLSConfig(a, b *FrontendTLSConfigIR) bool {
@@ -439,11 +490,41 @@ func equalsClientCertValidationIR(a, b *ClientCertificateValidationIR) bool {
 	return true
 }
 
+func equalsGatewayBackendTLSConfig(a, b *GatewayBackendTLSConfigIR) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return secretObjectRefEqual(a.ClientCertificateRef, b.ClientCertificateRef)
+}
+
+func equalsGatewayBackendClientCertificate(a, b *GatewayBackendClientCertificateIR) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return bytes.Equal(a.Certificate.CA, b.Certificate.CA) &&
+		bytes.Equal(a.Certificate.PrivateKey, b.Certificate.PrivateKey) &&
+		bytes.Equal(a.Certificate.CertChain, b.Certificate.CertChain)
+}
+
+func secretObjectRefEqual(a, b *gwv1.SecretObjectReference) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return ptrEquals(a.Group, b.Group) &&
+		ptrEquals(a.Kind, b.Kind) &&
+		a.Name == b.Name &&
+		ptrEquals(a.Namespace, b.Namespace)
+}
+
 func objectRefEqual(a, b gwv1.ObjectReference) bool {
 	return a.Group == b.Group &&
 		a.Kind == b.Kind &&
 		a.Name == b.Name &&
 		ptrEquals(a.Namespace, b.Namespace)
+}
+
+func (c Gateway) HasBackendClientCertificateRef() bool {
+	return c.BackendTLSConfig != nil && c.BackendTLSConfig.ClientCertificateRef != nil
 }
 
 type BackendRefIR struct {

@@ -204,8 +204,9 @@ func TestHelmChartTemplate(t *testing.T) {
 	charts := []string{"kgateway"}
 
 	valuesCases := []struct {
-		name       string
-		valuesYAML string
+		name        string
+		valuesYAML  string
+		apiVersions []string
 	}{
 		{
 			name:       "default",
@@ -271,6 +272,14 @@ func TestHelmChartTemplate(t *testing.T) {
 `,
 		},
 		{
+			name: "service-monitor-enabled",
+			valuesYAML: `controller:
+  serviceMonitor:
+    enabled: true
+`,
+			apiVersions: []string{"monitoring.coreos.com/v1"},
+		},
+		{
 			name: "hpa-and-vpa",
 			valuesYAML: `controller:
   horizontalPodAutoscaler:
@@ -319,6 +328,153 @@ func TestHelmChartTemplate(t *testing.T) {
 `,
 		},
 		{
+			name: "tolerations",
+			valuesYAML: `tolerations:
+  - key: top-level
+    operator: Exists
+    effect: NoSchedule
+`,
+		},
+		{
+			name: "controller-empty-tolerations-override",
+			valuesYAML: `tolerations:
+  - key: top-level
+    operator: Exists
+    effect: NoSchedule
+controller:
+  tolerations: []
+`,
+		},
+		{
+			name: "controller-null-tolerations-fallback",
+			valuesYAML: `tolerations:
+  - key: top-level
+    operator: Exists
+    effect: NoSchedule
+controller:
+  tolerations: null
+`,
+		},
+		{
+			name: "controller-empty-topology-spread-constraints-override",
+			valuesYAML: `topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: kgateway
+controller:
+  topologySpreadConstraints: []
+`,
+		},
+		{
+			name: "controller-null-topology-spread-constraints-fallback",
+			valuesYAML: `topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: kgateway
+controller:
+  topologySpreadConstraints: null
+`,
+		},
+		{
+			name: "controller-overrides-top-level-values",
+			valuesYAML: `podAnnotations:
+  top-level-only: "true"
+  overridden: top-level
+podSecurityContext:
+  fsGroup: 2000
+securityContext:
+  allowPrivilegeEscalation: false
+resources:
+  requests:
+    cpu: 100m
+nodeSelector:
+  kubernetes.io/os: linux
+tolerations:
+  - key: top-level
+    operator: Exists
+    effect: NoSchedule
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/os
+              operator: In
+              values:
+                - linux
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        source: top-level
+controller:
+  podAnnotations:
+    controller-only: "true"
+    overridden: controller
+  podSecurityContext:
+    runAsNonRoot: true
+  securityContext:
+    readOnlyRootFilesystem: true
+  resources:
+    limits:
+      cpu: 200m
+  nodeSelector:
+    kubernetes.io/arch: amd64
+  tolerations:
+    - key: controller
+      operator: Exists
+      effect: NoExecute
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: kgateway
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          source: controller
+ `,
+		},
+		{
+			name: "controller-overrides-replace-not-merge",
+			valuesYAML: `nodeSelector:
+  kubernetes.io/os: linux
+  topology.kubernetes.io/zone: us-east-1a
+controller:
+  nodeSelector:
+    kubernetes.io/arch: amd64
+`,
+		},
+		{
+			name: "controller-empty-pod-annotations",
+			valuesYAML: `podAnnotations: null
+controller:
+  podAnnotations: {}
+`,
+		},
+		{
+			name: "controller-null-pod-annotations",
+			valuesYAML: `podAnnotations: null
+controller:
+  podAnnotations: null
+`,
+		},
+		{
 			name: "replicas-zero",
 			valuesYAML: `controller:
   replicaCount: 0
@@ -346,6 +502,9 @@ func TestHelmChartTemplate(t *testing.T) {
 				// Build helm template command args
 				// Explicitly set namespace to avoid picking up the current kubectl context's namespace
 				args := []string{"template", "test-release", absHelmChartPath, "--namespace", "default"}
+				for _, apiVersion := range vc.apiVersions {
+					args = append(args, "--api-versions", apiVersion)
+				}
 
 				// If we have custom values, write them to a temp file
 				if vc.valuesYAML != "" {

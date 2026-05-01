@@ -32,7 +32,7 @@ Listeners:
             filterConfig:
               '@type': type.googleapis.com/google.protobuf.StringValue
               value: '{}'
-            filterName: http_simple_mutations
+            filterName: rustformation
         - name: envoy.filters.http.router
           typedConfig:
             '@type': type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
@@ -100,7 +100,7 @@ Routes:
           '@type': type.googleapis.com/google.protobuf.StringValue
           value: '{"request":{"body":{"parseAs":"AsJson","value":"{{ invalid_template
             }"}}}'
-        perRouteConfigName: http_simple_mutations
+        perRouteConfigName: rustformation
   - domains:
     - api.a.example.com
     metadata:
@@ -125,7 +125,7 @@ Routes:
           '@type': type.googleapis.com/google.protobuf.StringValue
           value: '{"request":{"body":{"parseAs":"AsJson","value":"{{ invalid_template
             }"}}}'
-        perRouteConfigName: http_simple_mutations
+        perRouteConfigName: rustformation
   - domains:
     - backend.b.example.com
     name: listener~8080~backend_b_example_com
@@ -160,7 +160,7 @@ Routes:
           '@type': type.googleapis.com/google.protobuf.StringValue
           value: '{"request":{"body":{"parseAs":"AsJson","value":"{{ invalid_template
             }"}}}'
-        perRouteConfigName: http_simple_mutations
+        perRouteConfigName: rustformation
   - domains:
     - www.b.example.com
     name: listener~8080~www_b_example_com
@@ -218,6 +218,11 @@ Statuses:
         reason: Programmed
         status: "True"
         type: Programmed
+      - lastTransitionTime: null
+        message: Successfully resolved all Gateway references
+        reason: ResolvedRefs
+        status: "True"
+        type: ResolvedRefs
       listeners:
       - attachedRoutes: 1
         conditions:
@@ -322,6 +327,7 @@ Statuses:
           group: ""
           kind: ""
           name: example-gateway
+          sectionName: http-a
     gwtest/route-b:
       parents:
       - conditions:
@@ -340,6 +346,7 @@ Statuses:
           group: ""
           kind: ""
           name: example-gateway
+          sectionName: http-b
     gwtest/route-isolated:
       parents:
       - conditions:
@@ -358,6 +365,7 @@ Statuses:
           group: ""
           kind: ""
           name: example-gateway
+          sectionName: http-isolated
   policies:
     TrafficPolicy/gwtest/listener-merge-invalid-policy:
       ancestors:
