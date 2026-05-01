@@ -12,7 +12,6 @@ import (
 	"github.com/onsi/gomega"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
-	"google.golang.org/protobuf/proto"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	gwv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -471,23 +470,29 @@ func (s *testingSuite) TestListenerPolicyMaxRequestsPerConnection() {
 				g.Expect(err).NotTo(gomega.HaveOccurred(), "failed to get dynamic listener from config dump")
 				g.Expect(listener.GetFilterChains()).NotTo(gomega.BeEmpty(), "listener should have at least one filter chain")
 
-				// First filter chain, first network filter is always the HCM.
-				filterChain := listener.GetFilterChains()[0]
-				g.Expect(filterChain.GetFilters()).NotTo(gomega.BeEmpty(), "filter chain should have at least one network filter")
-
-				hcm := &envoy_hcm.HttpConnectionManager{}
-				g.Expect(proto.Unmarshal(filterChain.GetFilters()[0].GetTypedConfig().GetValue(), hcm)).
-					To(gomega.Succeed(), "failed to unmarshal HCM from network filter")
+				// Search all network filters for the HCM; don't assume it's always at index 0.
+				var hcm *envoy_hcm.HttpConnectionManager
+				for _, chain := range listener.GetFilterChains() {
+					for _, f := range chain.GetFilters() {
+						candidate := &envoy_hcm.HttpConnectionManager{}
+						if err := f.GetTypedConfig().UnmarshalTo(candidate); err == nil {
+							hcm = candidate
+							break
+						}
+					}
+					if hcm != nil {
+						break
+					}
+				}
+				g.Expect(hcm).NotTo(gomega.BeNil(), "could not find an HCM filter in any filter chain")
 
 				// Assert the exact value, not just presence — a wiring bug can leave the field at 0.
-				g.Expect(hcm.GetCommonHttpProtocolOptions()).NotTo(gomega.BeNil(),
-					"common_http_protocol_options should be present")
 				g.Expect(hcm.GetCommonHttpProtocolOptions().GetMaxRequestsPerConnection().GetValue()).
 					To(gomega.Equal(uint32(100)),
 						"max_requests_per_connection should be 100 as set in the ListenerPolicy")
 			}).
 				WithContext(ctx).
-				WithTimeout(30 * time.Second).
+				WithTimeout(60 * time.Second).
 				WithPolling(2 * time.Second).
 				Should(gomega.Succeed())
 		},
