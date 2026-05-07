@@ -1349,6 +1349,17 @@ func TestBasic(t *testing.T) {
 		})
 	})
 
+	t.Run("HTTPListenerPolicy with http2ProtocolOptions", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "httplistenerpolicy/http2-protocol-options.yaml",
+			outputFile: "httplistenerpolicy/http2-protocol-options.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
 	t.Run("HTTPListenerPolicy with preserveHttp1HeaderCase", func(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "httplistenerpolicy/preserve-http1-header-case.yaml",
@@ -1470,6 +1481,17 @@ func TestBasic(t *testing.T) {
 		})
 	})
 
+	t.Run("HTTPListenerPolicy with forwardClientCertDetails (mode defaulted)", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "httplistenerpolicy/forward-client-cert-details.yaml",
+			outputFile: "httplistenerpolicy/forward-client-cert-details.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
 	t.Run("HTTPListenerPolicy with uuidRequestIdConfig defaults", func(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "httplistenerpolicy/request-id-config-defaults.yaml",
@@ -1529,6 +1551,28 @@ func TestBasic(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "listener-policy-http/idle-timeout.yaml",
 			outputFile: "listener-policy-http/idle-timeout.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("ListenerPolicy with http2ProtocolOptions", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "listener-policy-http/http2-protocol-options.yaml",
+			outputFile: "listener-policy-http/http2-protocol-options.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("ListenerPolicy with tcpKeepalive", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "listener-policy-http/tcp-keepalive.yaml",
+			outputFile: "listener-policy-http/tcp-keepalive.yaml",
 			gwNN: types.NamespacedName{
 				Namespace: "default",
 				Name:      "example-gateway",
@@ -1705,6 +1749,17 @@ func TestBasic(t *testing.T) {
 		test(t, translatorTestCase{
 			inputFile:  "listener-policy-http/early-header-mutation.yaml",
 			outputFile: "listener-policy-http/early-header-mutation.yaml",
+			gwNN: types.NamespacedName{
+				Namespace: "default",
+				Name:      "example-gateway",
+			},
+		})
+	})
+
+	t.Run("ListenerPolicy with forwardClientCertDetails (AppendForward)", func(t *testing.T) {
+		test(t, translatorTestCase{
+			inputFile:  "listener-policy-http/forward-client-cert-details.yaml",
+			outputFile: "listener-policy-http/forward-client-cert-details.yaml",
 			gwNN: types.NamespacedName{
 				Namespace: "default",
 				Name:      "example-gateway",
