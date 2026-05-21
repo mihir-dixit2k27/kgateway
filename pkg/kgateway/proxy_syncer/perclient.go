@@ -61,12 +61,12 @@ func (c endpointsWithUccName) Equals(k endpointsWithUccName) bool {
 
 func snapshotPerClient(
 	krtopts krtutil.KrtOptions,
-	uccCol krt.Collection[ir.UniqlyConnectedClient],
+	uccCol krt.Collection[ir.UniquelyConnectedClient],
 	mostXdsSnapshots krt.Collection[GatewayXdsResources],
 	endpoints PerClientEnvoyEndpoints,
 	clusters PerClientEnvoyClusters,
 ) krt.Collection[XdsSnapWrapper] {
-	clusterSnapshot := krt.NewCollection(uccCol, func(kctx krt.HandlerContext, ucc ir.UniqlyConnectedClient) *clustersWithErrors {
+	clusterSnapshot := krt.NewCollection(uccCol, func(kctx krt.HandlerContext, ucc ir.UniquelyConnectedClient) *clustersWithErrors {
 		clustersForUcc := clusters.FetchClustersForClient(kctx, ucc)
 		if len(clustersForUcc) == 0 {
 			logger.Info("no perclient clusters; defer building snapshot", "client", ucc.ResourceName())
@@ -106,7 +106,7 @@ func snapshotPerClient(
 		}
 	}, krtopts.ToOptions("ClusterResources")...)
 
-	endpointResources := krt.NewCollection(uccCol, func(kctx krt.HandlerContext, ucc ir.UniqlyConnectedClient) *endpointsWithUccName {
+	endpointResources := krt.NewCollection(uccCol, func(kctx krt.HandlerContext, ucc ir.UniquelyConnectedClient) *endpointsWithUccName {
 		endpointsForUcc := endpoints.FetchEndpointsForClient(kctx, ucc)
 		endpointsProto := make([]envoycachetypes.ResourceWithTTL, 0, len(endpointsForUcc))
 		var endpointsHash uint64
@@ -122,7 +122,7 @@ func snapshotPerClient(
 		}
 	}, krtopts.ToOptions("EndpointResources")...)
 
-	xdsSnapshotsForUcc := krt.NewCollection(uccCol, func(kctx krt.HandlerContext, ucc ir.UniqlyConnectedClient) *XdsSnapWrapper {
+	xdsSnapshotsForUcc := krt.NewCollection(uccCol, func(kctx krt.HandlerContext, ucc ir.UniquelyConnectedClient) *XdsSnapWrapper {
 		defer (collectXDSTransformMetrics(ucc.ResourceName()))(nil)
 
 		listenerRouteSnapshot := krt.FetchOne(kctx, mostXdsSnapshots, krt.FilterKey(ucc.Role))
@@ -136,11 +136,25 @@ func snapshotPerClient(
 		// Defer publishing a per-client snapshot until its per-client inputs
 		// are coherent. Three guards:
 		//
-		//  1. If per-client clusters or endpoints haven't been derived yet
-		//     for this UCC, return nil. This handler can fire before the
-		//     per-client collections — driven by the same upstream events —
-		//     have re-run, so FetchOne may briefly return nil even though
-		//     results are imminent.
+		//  1. If per-client endpoints haven't been derived yet for this UCC,
+		//     return nil. This handler can fire before the per-client
+		//     collections — driven by the same upstream events — have
+		//     re-run, so FetchOne may briefly return nil even though results
+		//     are imminent. clustersForUcc is treated differently as a
+		//     defensive measure: a nil clusterSnapshot entry can in principle
+		//     mean either "not yet processed" or "this UCC legitimately has
+		//     zero backend clusters". In practice the latter is hard to hit
+		//     because finalBackends pulls in a BackendObjectIR for every
+		//     Service port in the cluster (kube-apiserver, kube-dns, the
+		//     gateway's own Service, etc.), so clustersForUcc is virtually
+		//     never nil in an operational cluster — even for a gateway whose
+		//     HTTPRoutes only emit RequestRedirect or direct responses.
+		//     Substituting an empty resource set keeps the function honest
+		//     against narrow edge cases (a freshly started controller before
+		//     Service informers have synced, or a configuration whose only
+		//     backends are non-K8s and all fail translation) without
+		//     weakening guards 2 and 3, which still defer if any specific
+		//     cluster reference is missing.
 		//
 		//  2. If any cluster referenced as a dataplane routing target
 		//     (RouteAction / TcpProxy) is not yet present or explicitly
@@ -169,8 +183,15 @@ func snapshotPerClient(
 		// which findMissingReferencedClusters explicitly skips.
 		//
 		// Historical context: https://github.com/solo-io/gloo/pull/10611.
-		if clustersForUcc == nil || clientEndpointResources == nil {
-			logger.Info("per-client inputs not ready; deferring snapshot", "client", ucc.ResourceName())
+		if clustersForUcc == nil {
+			clustersForUcc = &clustersWithErrors{
+				clusters: envoycache.Resources{
+					Items: map[string]envoycachetypes.ResourceWithTTL{},
+				},
+			}
+		}
+		if clientEndpointResources == nil {
+			logger.Info("per-client endpoints not ready; deferring snapshot", "client", ucc.ResourceName())
 			return nil
 		}
 
