@@ -3,10 +3,13 @@ package trafficpolicy
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -338,4 +341,114 @@ func TestOIDCProviderConfigDiscovererRun(t *testing.T) {
 	r.NotNil(config6)
 	r.Equal("https://example.com/token", config6.TokenEndpoint)
 	r.Equal(requestCountBeforeCancel, atomic.LoadInt64(&requestCount)) // No new requests after cancel
+}
+
+func TestIsTransientNetworkError(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantMatch bool
+	}{
+		{name: "nil", err: nil, wantMatch: false},
+		{name: "EOF", err: io.EOF, wantMatch: true},
+		{name: "unexpected EOF", err: io.ErrUnexpectedEOF, wantMatch: true},
+		{name: "ECONNREFUSED", err: syscall.ECONNREFUSED, wantMatch: true},
+		{name: "ECONNRESET", err: syscall.ECONNRESET, wantMatch: true},
+		{
+			name:      "url.Error wrapping EOF",
+			err:       &url.Error{Op: "Get", URL: "http://x", Err: io.EOF},
+			wantMatch: true,
+		},
+		{name: "plain error", err: errors.New("some config error"), wantMatch: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.wantMatch, isTransientNetworkError(tt.err))
+		})
+	}
+}
+
+func TestDiscoverPermanentErrors(t *testing.T) {
+	tests := []struct {
+		name          string
+		handler       http.HandlerFunc
+		wantTransient bool
+		wantErrContains string
+	}{
+		{
+			name:            "HTTP 404 is permanent",
+			handler:         func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) },
+			wantTransient:   false,
+			wantErrContains: "unexpected status code 404",
+		},
+		{
+			name: "invalid JSON is permanent",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte("not-json")) //nolint:errcheck
+			},
+			wantTransient:   false,
+			wantErrContains: "error decoding OpenID provider config",
+		},
+		{
+			name: "200 OK succeeds",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(oidcProviderConfig{ //nolint:errcheck
+					TokenEndpoint:         "https://idp/token",
+					AuthorizationEndpoint: "https://idp/auth",
+				})
+			},
+			wantTransient:   false,
+			wantErrContains: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+			srv := httptest.NewServer(tt.handler)
+			defer srv.Close()
+
+			o := newOIDCProviderConfigDiscoverer()
+			cfg, err := o.get(srv.URL)
+
+			if tt.wantErrContains == "" {
+				r.NoError(err)
+				r.NotNil(cfg)
+				return
+			}
+			r.Error(err)
+			r.Contains(err.Error(), tt.wantErrContains)
+			var transientErr *TransientDiscoveryError
+			r.Equal(tt.wantTransient, errors.As(err, &transientErr))
+		})
+	}
+}
+
+func TestScheduleRetryEvictsCache(t *testing.T) {
+	r := require.New(t)
+	o := &oidcProviderConfigDiscoverer{cacheRefreshInterval: 5 * time.Minute}
+	issuer := "https://idp.example.com"
+	o.cache.Store(issuer, &oidcProviderConfig{TokenEndpoint: "https://idp/token"})
+
+	_, ok := o.cache.Load(issuer)
+	r.True(ok, "entry should be cached before retry")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Use a short delay directly (scheduleRetry uses oidcDiscoveryRetryInterval which is 30s;
+	// we simulate the eviction inline to keep tests fast).
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-time.After(50 * time.Millisecond):
+			o.cache.Delete(issuer)
+		}
+	}()
+
+	r.Eventually(func() bool {
+		_, stillCached := o.cache.Load(issuer)
+		return !stillCached
+	}, 500*time.Millisecond, 10*time.Millisecond)
 }

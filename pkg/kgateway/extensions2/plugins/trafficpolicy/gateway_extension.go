@@ -216,6 +216,11 @@ func TranslateGatewayExtensionBuilder(
 		case gExt.OAuth2 != nil:
 			out, err := buildOAuth2ProviderConfig(krtctx, &gExt, commoncol.BackendIndex, commoncol.Secrets, oidcDiscoverer)
 			if err != nil {
+				var transientErr *TransientDiscoveryError
+				if errors.As(err, &transientErr) && gExt.OAuth2.IssuerURI != nil {
+					// evict this issuer early so the next reconcile retries discovery
+					oidcDiscoverer.scheduleRetry(ctx, *gExt.OAuth2.IssuerURI)
+				}
 				p.Err = fmt.Errorf("error building OAuth2 config: %w", err)
 				return p
 			}
