@@ -5,7 +5,6 @@ Clusters:
       ads: {}
       resourceApiVersion: V3
   ignoreHealthOnHostRemoval: true
-  metadata: {}
   name: kube_default_example-svc_80
   type: EDS
 - connectTimeout: 5s
@@ -14,7 +13,6 @@ Clusters:
       ads: {}
       resourceApiVersion: V3
   ignoreHealthOnHostRemoval: true
-  metadata: {}
   name: kube_default_ratelimit_8081
   type: EDS
   typedExtensionProtocolOptions:
@@ -23,7 +21,6 @@ Clusters:
       explicitHttpConfig:
         http2ProtocolOptions: {}
 - connectTimeout: 5s
-  metadata: {}
   name: test-backend-plugin_default_example-svc_80
 Listeners:
 - address:
@@ -146,6 +143,14 @@ Routes:
             - requestHeaders:
                 descriptorKey: path
                 headerName: :path
+            - requestHeaders:
+                descriptorKey: x-header-1
+                headerName: x-header-1
+          - actions:
+            - remoteAddress: {}
+            - requestHeaders:
+                descriptorKey: x-header-2
+                headerName: x-header-2
         ratelimit/local:
           '@type': type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
           filterEnabled:

@@ -3,6 +3,7 @@ package krtcollections
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"istio.io/istio/pkg/config/labels"
@@ -10,7 +11,6 @@ import (
 	"istio.io/istio/pkg/ptr"
 	"istio.io/istio/pkg/slices"
 	"istio.io/istio/pkg/util/smallset"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -95,6 +95,12 @@ type backendKey struct {
 	port int32
 }
 
+// String must include the port; otherwise the embedded ir.ObjectSource.String()
+// is promoted and all ports of a multi-port host collapse into one index bucket.
+func (b backendKey) String() string {
+	return b.ObjectSource.String() + ":" + strconv.Itoa(int(b.port))
+}
+
 func NewBackendIndex(
 	krtopts krtutil.KrtOptions,
 	policies *PolicyIndex,
@@ -143,11 +149,11 @@ func (i *BackendIndex) attachPoliciesToBackend(
 	backendObj ir.BackendObjectIR,
 ) *ir.BackendObjectIR {
 	// Look up service-wide policies (no sectionName).
-	policies := i.policies.getTargetingPoliciesForBackends(kctx, backendObj.ObjectSource, "", backendObj.GetObjectLabels(), false)
+	policies := i.policies.getTargetingPoliciesForBackends(kctx, backendObj.GetObjectSource(), "", backendObj.GetObjectLabels(), false)
 	// Also look up port specific policies if the backend has a port name (for example BackendTLSPolicy with sectionName).
 	// excludeGlobal=true since global policies are already included from the first lookup above.
 	if backendObj.PortName != "" {
-		portPolicies := i.policies.getTargetingPoliciesForBackends(kctx, backendObj.ObjectSource, backendObj.PortName, backendObj.GetObjectLabels(), true)
+		portPolicies := i.policies.getTargetingPoliciesForBackends(kctx, backendObj.GetObjectSource(), backendObj.PortName, backendObj.GetObjectLabels(), true)
 		policies = preferPortSpecificBackendTLSPolicies(policies, portPolicies)
 		policies = append(policies, portPolicies...)
 	}
@@ -223,7 +229,7 @@ func (i *BackendIndex) AddBackends(gk schema.GroupKind, col krt.Collection[ir.Ba
 			return nil
 		}
 		for _, alias := range backendObj.Aliases {
-			aliasKeys = append(aliasKeys, backendKey{ObjectSource: alias, port: backendObj.Port})
+			aliasKeys = append(aliasKeys, backendKey{ObjectSource: alias, port: backendObj.GetPort()})
 		}
 		return aliasKeys
 	})
@@ -476,18 +482,6 @@ func GatewaysForEnvoyTransformationFunc(config *GatewayIndexConfig) func(kctx kr
 			Listeners:           make([]ir.Listener, 0, len(gw.Spec.Listeners)),
 			DeniedListenerSets:  map[schema.GroupVersionKind]ir.ListenerSets{},
 			AllowedListenerSets: map[schema.GroupVersionKind]ir.ListenerSets{},
-		}
-
-		if gw.Annotations[string(apiannotations.PerConnectionBufferLimit)] != "" { //nolint:staticcheck // deprecated annotation
-			logger.Warn("per-connection-buffer-limit annotation is deprecated, use ListenerPolicy with perConnectionBufferLimitBytes instead",
-				"gateway", fmt.Sprintf("%s/%s", gw.Namespace, gw.Name),
-				"annotation", apiannotations.PerConnectionBufferLimit) //nolint:staticcheck // deprecated annotation
-			limit, err := resource.ParseQuantity(gw.Annotations[string(apiannotations.PerConnectionBufferLimit)]) //nolint:staticcheck // deprecated annotation
-			if err != nil {
-				logger.Error("failed to parse per connection buffer limit", "error", err)
-			} else {
-				gwIR.PerConnectionBufferLimitBytes = new(uint32(limit.Value())) //nolint:gosec // G115: Kubernetes resource quantities are always non-negative
-			}
 		}
 
 		// TODO: http polic
