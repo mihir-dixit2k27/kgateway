@@ -1814,6 +1814,23 @@ spec:
                 required:
                 - policy
                 type: object
+              statPrefix:
+                description: |-
+                  StatPrefix configures the Envoy route-level stat_prefix, enabling per-route
+                  metric namespacing. Supports template variables: %NAMESPACE%, %NAME%, %RULE_NAME%.
+                  Only honored for HTTPRoute and GRPCRoute targets.
+                properties:
+                  value:
+                    description: |-
+                      Value is the stat_prefix template string. Template variables
+                      (%NAMESPACE%, %NAME%, %RULE_NAME%) are substituted at apply-time.
+                    maxLength: 256
+                    minLength: 1
+                    pattern: ^[a-zA-Z0-9_%.-]+$
+                    type: string
+                required:
+                - value
+                type: object
               retry:
                 description: |-
                   Retry defines the policy for retrying requests.

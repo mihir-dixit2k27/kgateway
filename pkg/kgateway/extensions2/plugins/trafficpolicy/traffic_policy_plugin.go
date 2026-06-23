@@ -2,6 +2,7 @@ package trafficpolicy
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	envoyroutev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
@@ -105,6 +106,7 @@ type trafficPolicySpecIr struct {
 	tracing         *routeTracingIR
 	faultInjection  *faultInjectionIR
 	httpACL         *httpACLIR
+	statPrefix      *statPrefixIR
 }
 
 func (d *TrafficPolicy) CreationTime() time.Time {
@@ -189,6 +191,9 @@ func (d *TrafficPolicy) Equals(in any) bool {
 	if !d.spec.httpACL.Equals(d2.spec.httpACL) {
 		return false
 	}
+	if !d.spec.statPrefix.Equals(d2.spec.statPrefix) {
+		return false
+	}
 	return true
 }
 
@@ -218,6 +223,7 @@ func (p *TrafficPolicy) Validate() error {
 	validators = append(validators, p.spec.tracing.Validate)
 	validators = append(validators, p.spec.faultInjection.Validate)
 	validators = append(validators, p.spec.httpACL.Validate)
+	validators = append(validators, p.spec.statPrefix.Validate)
 	for _, validator := range validators {
 		if err := validator(); err != nil {
 			return err
@@ -378,7 +384,7 @@ func (p *trafficPolicyPluginGwPass) applyGatewayLevelPerRouteSettings(spec traff
 			if route.GetRoute() == nil {
 				continue
 			}
-			p.handlePerRoutePolicies(spec, route)
+			p.handlePerRoutePolicies(spec, ir.HttpRouteRuleMatchIR{}, route)
 		}
 	}
 }
@@ -403,7 +409,7 @@ func (p *trafficPolicyPluginGwPass) ApplyForRoute(pCtx *ir.RouteContext, outputR
 		return nil
 	}
 
-	p.handlePerRoutePolicies(policy.spec, outputRoute)
+	p.handlePerRoutePolicies(policy.spec, pCtx.In, outputRoute)
 	p.handlePolicies(pCtx.FilterChainName, &pCtx.TypedFilterConfig, policy.spec)
 
 	return nil
@@ -754,9 +760,11 @@ func (p *trafficPolicyPluginGwPass) handlePolicies(
 	p.handleHttpACL(fcn, typedFilterConfig, spec.httpACL)
 }
 
-// handlePerRoutePolicies handles policies that are meant to be processed at the route level
+// handlePerRoutePolicies handles policies that are meant to be processed at the route level.
+// routeMatchIR provides the route metadata needed for stat_prefix template substitution.
 func (p *trafficPolicyPluginGwPass) handlePerRoutePolicies(
 	spec trafficPolicySpecIr,
+	routeMatchIR ir.HttpRouteRuleMatchIR,
 	out *envoyroutev3.Route,
 ) {
 	// A parent route rule with a delegated backend will not have RouteAction set.
@@ -799,6 +807,29 @@ func (p *trafficPolicyPluginGwPass) handlePerRoutePolicies(
 
 	// Apply route-level tracing overrides
 	p.handleRouteTracing(spec, out)
+
+	// Apply stat_prefix: resolve template variables and set on the route output.
+	if spec.statPrefix != nil {
+		val := spec.statPrefix.rawTemplate
+		if routeMatchIR.Parent != nil {
+			val = strings.ReplaceAll(val, "%NAMESPACE%", routeMatchIR.Parent.Namespace)
+			val = strings.ReplaceAll(val, "%NAME%", routeMatchIR.Parent.Name)
+		}
+		if strings.Contains(val, "%RULE_NAME%") {
+			name := routeMatchIR.RuleName
+			if name == "" {
+				logger.Warn("stat_prefix template uses %RULE_NAME% but rule has no name; "+
+					"the literal token will appear in the Envoy stat_prefix",
+					"template", spec.statPrefix.rawTemplate,
+				)
+			} else {
+				val = strings.ReplaceAll(val, "%RULE_NAME%", name)
+			}
+		}
+		if val != "" {
+			out.StatPrefix = val
+		}
+	}
 }
 
 // handlePerVHostPolicies handles policies that are meant to be processed at the vhost level

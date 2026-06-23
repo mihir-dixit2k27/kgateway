@@ -182,6 +182,16 @@ type TrafficPolicySpec struct {
 	// a route-level ACL completely replaces the gateway-level ACL for that route.
 	// +optional
 	ACL *shared.ACLPolicy `json:"acl,omitempty"`
+
+	// StatPrefix configures the Envoy route-level stat_prefix, enabling per-route metric namespacing.
+	// When set, Envoy emits route metrics under a prefix derived from this field.
+	// The value may include template variables substituted at translation time:
+	//   - %NAMESPACE% -> the HTTPRoute/GRPCRoute namespace
+	//   - %NAME%      -> the HTTPRoute/GRPCRoute name
+	//   - %RULE_NAME% -> the HTTPRoute rule name (falls back to rule index if unnamed)
+	// This field is only honored for HTTPRoute and GRPCRoute targets.
+	// +optional
+	StatPrefix *StatPrefixConfig `json:"statPrefix,omitempty"`
 }
 
 // URLRewrite specifies URL rewrite rules using regular expressions.
@@ -816,4 +826,15 @@ type FaultResponseRateLimit struct {
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:default=100
 	Percentage *int32 `json:"percentage,omitempty"`
+}
+
+// StatPrefixConfig configures the Envoy route-level stat_prefix for per-route metric namespacing.
+type StatPrefixConfig struct {
+	// Value is the stat_prefix template string.
+	// Template variables (%NAMESPACE%, %NAME%, %RULE_NAME%) are substituted at apply-time.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_%.-]+$`
+	Value string `json:"value"`
 }

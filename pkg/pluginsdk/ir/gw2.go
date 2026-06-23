@@ -37,7 +37,9 @@ type HttpRouteRuleMatchIR struct {
 	Backends   []HttpBackend
 	Match      gwv1.HTTPRouteMatch
 	MatchIndex int
-	Name       string
+	// RuleName is the name of the HTTPRoute rule, used for stat_prefix template substitution.
+	RuleName string
+	Name     string
 
 	// PrecedenceWeight specifies the weight of this route rule relative to other route rules.
 	// Higher weight means higher priority, and are evaluated before routes with lower weight
